@@ -12,7 +12,7 @@ export const Header: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] sticky top-0 z-50 backdrop-blur-sm bg-opacity-95 dark:bg-opacity-95 transition-colors">
+    <header className="border-b border-gray-200 dark:border-gray-700 bg-[var(--color-surface)]/80 dark:bg-[#1a1a1a]/80 sticky top-0 z-50 backdrop-blur-md backdrop-saturate-150 transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center h-16 md:h-20">
           {/* Logo and nav grouped together on the left */}
@@ -22,19 +22,19 @@ export const Header: React.FC = () => {
             <nav className="hidden md:flex space-x-6 lg:space-x-8">
               <Link
                 to="/vaults"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
               >
                 Vaults
               </Link>
               <Link
                 to="/proposals"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
               >
                 Proposals
               </Link>
               <Link
                 to="/docs"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
               >
                 Docs
               </Link>
@@ -54,11 +54,11 @@ export const Header: React.FC = () => {
             {/* Mobile menu button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="md:hidden p-2 rounded-lg hover:bg-[var(--color-surface-alt)] transition-colors"
               aria-label="Toggle menu"
             >
               <svg
-                className="w-6 h-6 text-gray-600 dark:text-gray-300"
+                className="w-6 h-6 text-[var(--color-text-secondary)]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -75,25 +75,25 @@ export const Header: React.FC = () => {
 
         {/* Mobile menu */}
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-700 backdrop-blur-md">
             <nav className="flex flex-col space-y-4">
               <Link
                 to="/vaults"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Vaults
               </Link>
               <Link
                 to="/proposals"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Proposals
               </Link>
               <Link
                 to="/docs"
-                className="text-gray-600 dark:text-gray-300 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors font-medium"
+                className="text-[var(--color-text-secondary)] hover:text-[#b2ac88] transition-colors font-medium"
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Docs
