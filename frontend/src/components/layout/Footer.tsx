@@ -29,7 +29,7 @@ export const Footer: React.FC = () => {
               </svg>
             </a>
             <a
-              href="https://github.com/flowguard"
+              href="https://github.com/Goodnessmbakara/flow-guard"
               target="_blank"
               rel="noopener noreferrer"
               className="text-white hover:opacity-80 transition-opacity"
@@ -165,7 +165,7 @@ export const Footer: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="https://github.com/flowguard"
+                  href="https://github.com/Goodnessmbakara/flow-guard"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-white hover:opacity-80 transition-opacity text-base md:text-lg"
