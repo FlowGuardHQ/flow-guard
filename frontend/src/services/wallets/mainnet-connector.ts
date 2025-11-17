@@ -1,0 +1,240 @@
+/**
+ * Mainnet.cash Wallet Connector
+ * Provides integration with mainnet.cash wallet library
+ */
+
+import { TestNetWallet, RegTestWallet, Wallet } from 'mainnet-js';
+import {
+  IWalletConnector,
+  WalletType,
+  WalletInfo,
+  WalletBalance,
+  Transaction,
+  SignedTransaction,
+} from '../../types/wallet';
+
+export class MainnetConnector implements IWalletConnector {
+  type = WalletType.MAINNET;
+  private wallet: Wallet | TestNetWallet | RegTestWallet | null = null;
+  private network: 'mainnet' | 'testnet' | 'chipnet' = 'chipnet';
+
+  constructor(network: 'mainnet' | 'testnet' | 'chipnet' = 'chipnet') {
+    this.network = network;
+  }
+
+  /**
+   * Check if mainnet.cash is available
+   */
+  async isAvailable(): Promise<boolean> {
+    try {
+      // mainnet-js is always available if imported
+      return true;
+    } catch (error) {
+      console.error('Mainnet.cash not available:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Connect to wallet (create or restore from localStorage)
+   */
+  async connect(): Promise<WalletInfo> {
+    try {
+      // Check if wallet exists in localStorage
+      const savedWalletId = localStorage.getItem('mainnet_wallet_id');
+
+      if (savedWalletId) {
+        // Restore existing wallet
+        this.wallet = await this.restoreWallet(savedWalletId);
+      } else {
+        // Create new wallet
+        this.wallet = await this.createWallet();
+
+        // Save wallet ID for future sessions
+        const walletId = await this.wallet.toString();
+        localStorage.setItem('mainnet_wallet_id', walletId);
+      }
+
+      const address = await this.getAddress();
+      const balance = await this.getBalance();
+
+      return {
+        address,
+        balance,
+        network: this.network,
+      };
+    } catch (error) {
+      console.error('Failed to connect mainnet wallet:', error);
+      throw new Error('Failed to connect to mainnet.cash wallet');
+    }
+  }
+
+  /**
+   * Create a new wallet based on network
+   */
+  private async createWallet(): Promise<Wallet | TestNetWallet | RegTestWallet> {
+    switch (this.network) {
+      case 'testnet':
+      case 'chipnet':
+        return await TestNetWallet.newRandom();
+      case 'mainnet':
+        return await Wallet.newRandom();
+      default:
+        return await TestNetWallet.newRandom();
+    }
+  }
+
+  /**
+   * Restore wallet from saved ID
+   */
+  private async restoreWallet(walletId: string): Promise<Wallet | TestNetWallet | RegTestWallet> {
+    try {
+      switch (this.network) {
+        case 'testnet':
+        case 'chipnet':
+          return await TestNetWallet.fromId(walletId);
+        case 'mainnet':
+          return await Wallet.fromId(walletId);
+        default:
+          return await TestNetWallet.fromId(walletId);
+      }
+    } catch (error) {
+      console.error('Failed to restore wallet, creating new one:', error);
+      return this.createWallet();
+    }
+  }
+
+  /**
+   * Disconnect wallet
+   */
+  async disconnect(): Promise<void> {
+    this.wallet = null;
+    localStorage.removeItem('mainnet_wallet_id');
+  }
+
+  /**
+   * Get wallet address
+   */
+  async getAddress(): Promise<string> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+    return this.wallet.getDepositAddress();
+  }
+
+  /**
+   * Get wallet balance
+   */
+  async getBalance(): Promise<WalletBalance> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      const balanceResponse = await this.wallet.getBalance();
+      // Handle both number and BalanceResponse types
+      let satoshis = 0;
+
+      if (typeof balanceResponse === 'number') {
+        satoshis = balanceResponse;
+      } else if (balanceResponse && typeof balanceResponse === 'object') {
+        // BalanceResponse has sat property
+        satoshis = (balanceResponse as any).sat || 0;
+      }
+
+      const bch = satoshis / 100000000; // Convert satoshis to BCH
+
+      return {
+        bch,
+        sat: satoshis,
+      };
+    } catch (error) {
+      console.error('Failed to get balance:', error);
+      return {
+        bch: 0,
+        sat: 0,
+      };
+    }
+  }
+
+  /**
+   * Sign and send transaction
+   */
+  async signTransaction(tx: Transaction): Promise<SignedTransaction> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      // Send BCH transaction
+      const response = await this.wallet.send([
+        {
+          cashaddr: tx.to,
+          value: tx.amount,
+          unit: 'sat',
+        },
+      ]);
+
+      // Extract txId from response (can be string or object)
+      let txId = '';
+      if (typeof response === 'string') {
+        txId = response;
+      } else if (response && typeof response === 'object') {
+        txId = (response as any).txId || '';
+      }
+
+      return {
+        txId,
+        hex: '', // mainnet-js doesn't return hex in some cases
+      };
+    } catch (error) {
+      console.error('Failed to sign transaction:', error);
+      throw new Error('Failed to sign transaction');
+    }
+  }
+
+  /**
+   * Sign a message
+   */
+  async signMessage(message: string): Promise<string> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      const signature = await this.wallet.sign(message);
+      return signature.signature;
+    } catch (error) {
+      console.error('Failed to sign message:', error);
+      throw new Error('Failed to sign message');
+    }
+  }
+
+  /**
+   * Get wallet seed phrase (for backup)
+   */
+  async getSeedPhrase(): Promise<string> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    try {
+      const seed = await this.wallet.getSeed();
+      return seed.seed;
+    } catch (error) {
+      console.error('Failed to get seed phrase:', error);
+      throw new Error('Failed to get seed phrase');
+    }
+  }
+
+  /**
+   * Export wallet as WIF (Wallet Import Format)
+   */
+  async exportWIF(): Promise<string> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    return this.wallet.privateKeyWif || '';
+  }
+}
