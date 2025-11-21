@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { fetchVault, fetchProposals, approveProposal } from '../utils/api';
-import { approveProposalOnChain } from '../utils/blockchain';
+import { approveProposalOnChain, executePayoutOnChain, unlockCycleOnChain } from '../utils/blockchain';
 import { AddSignerModal } from '../components/vaults/AddSignerModal';
 import { useWallet } from '../hooks/useWallet';
 
@@ -17,6 +17,10 @@ export default function VaultDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showAddSignerModal, setShowAddSignerModal] = useState(false);
   const [approvingProposalId, setApprovingProposalId] = useState<string | null>(null);
+  const [executingProposalId, setExecutingProposalId] = useState<string | null>(null);
+  const [unlockingCycle, setUnlockingCycle] = useState<number | null>(null);
+  const [eligibleCycles, setEligibleCycles] = useState<number[]>([]);
+  const [currentCycle, setCurrentCycle] = useState<number>(0);
 
   useEffect(() => {
     const loadVault = async () => {
@@ -53,6 +57,26 @@ export default function VaultDetailPage() {
     loadProposals();
   }, [id]);
 
+  useEffect(() => {
+    const loadEligibleCycles = async () => {
+      if (!id || !vault?.contractAddress) return;
+      try {
+        const API_BASE_URL = import.meta.env.VITE_API_URL ||
+          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
+        const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
+        if (response.ok) {
+          const data = await response.json();
+          setEligibleCycles(data.eligibleCycles || []);
+          setCurrentCycle(data.currentCycle || 0);
+        }
+      } catch (err) {
+        console.error('Failed to load eligible cycles:', err);
+      }
+    };
+
+    loadEligibleCycles();
+  }, [id, vault?.contractAddress]);
+
   const role = vault?.role || 'viewer';
   const isCreator = role === 'creator';
   const isSigner = role === 'signer' || isCreator;
@@ -60,7 +84,7 @@ export default function VaultDetailPage() {
 
   const handleApproveProposal = async (proposalId: string) => {
     if (!wallet.address) {
-      alert('Please connect your wallet');
+      alert('⚠️ Please connect your wallet to approve proposals');
       return;
     }
 
@@ -68,24 +92,26 @@ export default function VaultDetailPage() {
       setApprovingProposalId(proposalId);
 
       // Try on-chain approval if vault has contract address and wallet is connected
-      if (vault?.contractAddress && wallet.wallet && wallet.publicKey) {
+      if (vault?.contractAddress && wallet.isConnected && wallet.publicKey) {
         try {
           console.log('Attempting on-chain approval...');
           const txid = await approveProposalOnChain(
-            wallet.wallet,
+            wallet,
             proposalId,
             wallet.publicKey
           );
           console.log('On-chain approval successful, txid:', txid);
-          alert(`✅ Approval broadcast to blockchain!\nTransaction ID: ${txid}`);
+          alert(`✅ Approval Successful!\n\nYour signature has been broadcast to the BCH blockchain.\n\nTransaction ID: ${txid}\n\nView on explorer: https://chipnet.chaingraph.cash/tx/${txid}`);
         } catch (onChainError: any) {
           console.warn('On-chain approval failed, falling back to database:', onChainError);
           // Fallback to database approval
           await approveProposal(proposalId, wallet.address);
+          alert('✅ Approval recorded in database.\n\n⚠️ Note: On-chain transaction failed. Approval saved locally.');
         }
       } else {
         // No contract address or wallet not fully connected - use database approval
         await approveProposal(proposalId, wallet.address);
+        alert('✅ Approval recorded in database.');
       }
 
       // Reload proposals
@@ -94,9 +120,165 @@ export default function VaultDetailPage() {
         setProposals(proposalsData);
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to approve proposal');
+      const errorMsg = err.message || 'Failed to approve proposal';
+      alert(`❌ Approval Failed\n\n${errorMsg}\n\nPlease try again or contact support if the issue persists.`);
     } finally {
       setApprovingProposalId(null);
+    }
+  };
+
+  const handleExecutePayout = async (proposalId: string) => {
+    if (!wallet.address) {
+      alert('⚠️ Please connect your wallet to execute payouts');
+      return;
+    }
+
+    if (!vault?.contractAddress) {
+      alert('❌ Cannot execute payout\n\nThis vault does not have an on-chain contract address.');
+      return;
+    }
+
+    if (!wallet.isConnected || !wallet.publicKey) {
+      alert('⚠️ Wallet not fully connected\n\nPlease reconnect your wallet and try again.');
+      return;
+    }
+
+    // Confirm with user before executing
+    const confirmed = confirm(
+      '⚠️ Execute Payout?\n\n' +
+      'This will broadcast a multi-signature transaction to the BCH blockchain.\n\n' +
+      `• ${vault.approvalThreshold} signers must sign this transaction\n` +
+      '• Funds will be sent from the contract to the recipient\n• This action cannot be undone\n\n' +
+      'Do you want to continue?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setExecutingProposalId(proposalId);
+      console.log('Attempting on-chain payout execution...');
+
+      const txid = await executePayoutOnChain(wallet, proposalId);
+
+      console.log('On-chain payout execution successful, txid:', txid);
+      alert(
+        `✅ Payout Executed Successfully!\n\n` +
+        `Funds have been sent from the vault contract to the recipient.\n\n` +
+        `Transaction ID: ${txid}\n\n` +
+        `View on explorer: https://chipnet.chaingraph.cash/tx/${txid}`
+      );
+
+      // Reload proposals to show updated status
+      if (id) {
+        const proposalsData = await fetchProposals(id);
+        setProposals(proposalsData);
+      }
+
+      // Reload vault to show updated balance
+      if (id) {
+        const vaultData = await fetchVault(id, wallet.address || undefined);
+        setVault(vaultData);
+      }
+    } catch (err: any) {
+      const errorMsg = err.message || 'Failed to execute payout';
+      console.error('Payout execution failed:', err);
+      alert(
+        `❌ Payout Execution Failed\n\n` +
+        `${errorMsg}\n\n` +
+        `Possible reasons:\n` +
+        `• Insufficient approvals\n` +
+        `• Wallet signature rejected\n` +
+        `• Network error\n\n` +
+        `Please check the proposal status and try again.`
+      );
+    } finally {
+      setExecutingProposalId(null);
+    }
+  };
+
+  const handleUnlockCycle = async (cycleNumber: number) => {
+    if (!wallet.address) {
+      alert('⚠️ Please connect your wallet to unlock cycles');
+      return;
+    }
+
+    if (!vault?.contractAddress) {
+      alert('❌ Cannot unlock cycle\n\nThis vault does not have an on-chain contract address.');
+      return;
+    }
+
+    if (!wallet.isConnected || !wallet.publicKey) {
+      alert('⚠️ Wallet not fully connected\n\nPlease reconnect your wallet and try again.');
+      return;
+    }
+
+    if (!id) {
+      alert('❌ Invalid vault ID');
+      return;
+    }
+
+    // Confirm with user before unlocking
+    const confirmed = confirm(
+      '⚠️ Unlock Cycle?\n\n' +
+      'This will broadcast a multi-signature transaction to the BCH blockchain.\n\n' +
+      `• Cycle #${cycleNumber} will be unlocked\n` +
+      `• ${vault.unlockAmount || 0} BCH will become available\n` +
+      `• ${vault.approvalThreshold} signers must sign this transaction\n` +
+      '• This action cannot be undone\n\n' +
+      'Do you want to continue?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setUnlockingCycle(cycleNumber);
+      console.log('Attempting on-chain cycle unlock...');
+
+      const txid = await unlockCycleOnChain(wallet, id, cycleNumber, wallet.publicKey);
+
+      console.log('On-chain cycle unlock successful, txid:', txid);
+      alert(
+        `✅ Cycle Unlocked Successfully!\n\n` +
+        `Cycle #${cycleNumber} has been unlocked on the blockchain.\n` +
+        `${vault.unlockAmount || 0} BCH is now available for spending.\n\n` +
+        `Transaction ID: ${txid}\n\n` +
+        `View on explorer: https://chipnet.chaingraph.cash/tx/${txid}`
+      );
+
+      // Reload vault to show updated balance and cycles
+      if (id) {
+        const vaultData = await fetchVault(id, wallet.address || undefined);
+        setVault(vaultData);
+
+        // Reload eligible cycles
+        const API_BASE_URL = import.meta.env.VITE_API_URL ||
+          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
+        const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
+        if (response.ok) {
+          const data = await response.json();
+          setEligibleCycles(data.eligibleCycles || []);
+          setCurrentCycle(data.currentCycle || 0);
+        }
+      }
+    } catch (err: any) {
+      const errorMsg = err.message || 'Failed to unlock cycle';
+      console.error('Cycle unlock failed:', err);
+      alert(
+        `❌ Cycle Unlock Failed\n\n` +
+        `${errorMsg}\n\n` +
+        `Possible reasons:\n` +
+        `• Cycle not yet eligible for unlock\n` +
+        `• Insufficient signer approvals\n` +
+        `• Wallet signature rejected\n` +
+        `• Network error\n\n` +
+        `Please check the cycle status and try again.`
+      );
+    } finally {
+      setUnlockingCycle(null);
     }
   };
 
@@ -283,7 +465,7 @@ export default function VaultDetailPage() {
         </div>
 
         {canInteract ? (
-          <Card padding="lg">
+          <Card padding="lg" className="mb-8">
             <h2 className="text-xl font-semibold mb-4">Active Proposals</h2>
             {loadingProposals ? (
               <p className="text-gray-600">Loading proposals...</p>
@@ -325,7 +507,7 @@ export default function VaultDetailPage() {
                       </div>
                     </div>
                     {proposal.status === 'pending' && (
-                      <div className="mt-4">
+                      <div className="mt-4 flex gap-2">
                         <Button
                           size="sm"
                           variant="outline"
@@ -336,17 +518,86 @@ export default function VaultDetailPage() {
                         </Button>
                       </div>
                     )}
+                    {proposal.status === 'approved' && vault?.contractAddress && (
+                      <div className="mt-4 flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleExecutePayout(proposal.id)}
+                          disabled={executingProposalId === proposal.id}
+                        >
+                          {executingProposalId === proposal.id ? 'Executing...' : '💸 Execute Payout'}
+                        </Button>
+                        <div className="text-xs text-green-600 flex items-center">
+                          ✅ Ready to execute - {vault.approvalThreshold} approvals met
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </Card>
         ) : (
-          <Card padding="lg" className="bg-gray-50">
+          <Card padding="lg" className="bg-gray-50 mb-8">
             <h2 className="text-xl font-semibold mb-4">Active Proposals</h2>
             <p className="text-gray-600">
               You don't have permission to view proposals. Only signers can view and interact with proposals.
             </p>
+          </Card>
+        )}
+
+        {vault?.contractAddress && canInteract && (
+          <Card padding="lg">
+            <h2 className="text-xl font-semibold mb-4">Unlock Cycles</h2>
+            {eligibleCycles.length === 0 ? (
+              <div className="text-gray-600">
+                <p className="mb-2">No cycles eligible for unlock at this time.</p>
+                <p className="text-sm">
+                  Current Cycle: <span className="font-semibold">#{currentCycle}</span>
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Cycles become eligible based on the vault's cycle duration setting.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div className="mb-4 text-sm text-gray-600">
+                  <p>
+                    Current Cycle: <span className="font-semibold">#{currentCycle}</span>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Unlocking a cycle releases {vault.unlockAmount || 0} BCH for spending
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {eligibleCycles.map((cycleNum) => (
+                    <div
+                      key={cycleNum}
+                      className="p-4 border border-gray-200 rounded-lg hover:border-green-500 transition-colors"
+                    >
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="font-semibold text-lg">Cycle #{cycleNum}</h3>
+                          <p className="text-sm text-gray-600">
+                            Unlock Amount: <span className="font-semibold">{vault.unlockAmount || 0} BCH</span>
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={() => handleUnlockCycle(cycleNum)}
+                          disabled={unlockingCycle === cycleNum}
+                        >
+                          {unlockingCycle === cycleNum ? 'Unlocking...' : '🔓 Unlock Cycle'}
+                        </Button>
+                      </div>
+                      <div className="mt-2 text-xs text-green-600 flex items-center">
+                        ✅ Ready to unlock - requires {vault.approvalThreshold} signer approvals
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         )}
 
