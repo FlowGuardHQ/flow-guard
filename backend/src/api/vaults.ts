@@ -4,15 +4,25 @@ import { CreateVaultDto } from '../models/Vault';
 
 const router = Router();
 
-// Create vault
-router.post('/', (req, res) => {
+// Create vault (now async - deploys contract to blockchain)
+router.post('/', async (req, res) => {
   try {
     const dto: CreateVaultDto = req.body;
     const creator = req.headers['x-user-address'] as string || 'unknown';
-    
-    const vault = VaultService.createVault(dto, creator);
+
+    // Validate input
+    if (!dto.signers || dto.signers.length !== 3) {
+      return res.status(400).json({ error: 'Exactly 3 signers are required' });
+    }
+
+    if (!dto.signerPubkeys || dto.signerPubkeys.length !== 3) {
+      return res.status(400).json({ error: 'Exactly 3 signer public keys are required for blockchain deployment' });
+    }
+
+    const vault = await VaultService.createVault(dto, creator);
     res.status(201).json(vault);
   } catch (error: any) {
+    console.error('Vault creation error:', error);
     res.status(400).json({ error: error.message });
   }
 });

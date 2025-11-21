@@ -1,5 +1,4 @@
 import Database from 'better-sqlite3';
-import path from 'path';
 
 const dbPath = process.env.DATABASE_PATH || './flowguard.db';
 const db = new Database(dbPath);
@@ -75,18 +74,48 @@ db.exec(`
 
 `);
 
-// Migration: Add is_public column if it doesn't exist
-// This handles existing databases that don't have the column yet
+// Migrations: Add columns if they don't exist
+// This handles existing databases that don't have the columns yet
 try {
   const tableInfo = db.prepare("PRAGMA table_info(vaults)").all() as Array<{ name: string }>;
+
+  // Add is_public column
   const hasIsPublic = tableInfo.some(col => col.name === 'is_public');
-  
   if (!hasIsPublic) {
     db.exec(`ALTER TABLE vaults ADD COLUMN is_public INTEGER DEFAULT 0`);
+    console.log('Added is_public column to vaults table');
+  }
+
+  // Add contract_address column for blockchain integration
+  const hasContractAddress = tableInfo.some(col => col.name === 'contract_address');
+  if (!hasContractAddress) {
+    db.exec(`ALTER TABLE vaults ADD COLUMN contract_address TEXT`);
+    console.log('Added contract_address column to vaults table');
+  }
+
+  // Add contract_bytecode column for contract deployment
+  const hasContractBytecode = tableInfo.some(col => col.name === 'contract_bytecode');
+  if (!hasContractBytecode) {
+    db.exec(`ALTER TABLE vaults ADD COLUMN contract_bytecode TEXT`);
+    console.log('Added contract_bytecode column to vaults table');
+  }
+
+  // Add balance column for current on-chain balance
+  const hasBalance = tableInfo.some(col => col.name === 'balance');
+  if (!hasBalance) {
+    db.exec(`ALTER TABLE vaults ADD COLUMN balance REAL DEFAULT 0`);
+    console.log('Added balance column to vaults table');
+  }
+
+  // Add signer_pubkeys column for storing public keys
+  const hasSignerPubkeys = tableInfo.some(col => col.name === 'signer_pubkeys');
+  if (!hasSignerPubkeys) {
+    db.exec(`ALTER TABLE vaults ADD COLUMN signer_pubkeys TEXT`); // JSON array
+    console.log('Added signer_pubkeys column to vaults table');
   }
 } catch (error) {
-  // Column might already exist, ignore error
-  console.warn('Migration check for is_public column:', error);
+  // Columns might already exist, log warning
+  console.warn('Migration error:', error);
 }
 
 export default db;

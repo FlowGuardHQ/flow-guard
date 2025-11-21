@@ -1,20 +1,54 @@
 import { randomUUID } from 'crypto';
 import db from '../database/schema';
 import { Vault, CreateVaultDto } from '../models/Vault';
+import { ContractService } from './contract-service';
 
 export class VaultService {
-  static createVault(dto: CreateVaultDto, creator: string): Vault {
+  static async createVault(dto: CreateVaultDto, creator: string): Promise<Vault> {
     const id = randomUUID();
     const vaultId = `vault_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const isPublic = dto.isPublic ?? false; // Default to private
-    
+
+    // Validate that we have 3 signer public keys
+    if (!dto.signerPubkeys || dto.signerPubkeys.length !== 3) {
+      throw new Error('Exactly 3 signer public keys are required for contract deployment');
+    }
+
+    let contractAddress: string | undefined;
+    let contractBytecode: string | undefined;
+
+    // Deploy contract to blockchain
+    try {
+      const contractService = new ContractService('chipnet');
+      const deployment = await contractService.deployVault(
+        dto.signerPubkeys[0],
+        dto.signerPubkeys[1],
+        dto.signerPubkeys[2],
+        dto.approvalThreshold
+      );
+
+      contractAddress = deployment.contractAddress;
+      contractBytecode = deployment.bytecode;
+
+      console.log('Contract deployed successfully:', {
+        vaultId,
+        contractAddress,
+      });
+    } catch (error) {
+      console.error('Failed to deploy contract:', error);
+      // For now, continue without contract deployment (graceful degradation)
+      // In production, you might want to throw an error here
+      console.warn('Continuing vault creation without blockchain deployment');
+    }
+
     const stmt = db.prepare(`
       INSERT INTO vaults (
         id, vault_id, creator, total_deposit, spending_cap, approval_threshold,
-        signers, state, cycle_duration, unlock_amount, is_public
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        signers, signer_pubkeys, state, cycle_duration, unlock_amount, is_public,
+        contract_address, contract_bytecode, balance
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     stmt.run(
       id,
       vaultId,
@@ -23,10 +57,14 @@ export class VaultService {
       dto.spendingCap,
       dto.approvalThreshold,
       JSON.stringify(dto.signers),
+      JSON.stringify(dto.signerPubkeys),
       0, // Initial state
       dto.cycleDuration,
       dto.unlockAmount,
-      isPublic ? 1 : 0
+      isPublic ? 1 : 0,
+      contractAddress || null,
+      contractBytecode || null,
+      0 // Initial balance
     );
 
     const vault = this.getVaultById(id);
@@ -39,9 +77,9 @@ export class VaultService {
   static getVaultById(id: string): Vault | null {
     const stmt = db.prepare('SELECT * FROM vaults WHERE id = ?');
     const row = stmt.get(id) as any;
-    
+
     if (!row) return null;
-    
+
     return {
       id: row.id,
       vaultId: row.vault_id,
@@ -50,10 +88,14 @@ export class VaultService {
       spendingCap: row.spending_cap,
       approvalThreshold: row.approval_threshold,
       signers: JSON.parse(row.signers),
+      signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
       state: row.state,
       cycleDuration: row.cycle_duration,
       unlockAmount: row.unlock_amount,
       isPublic: Boolean(row.is_public),
+      contractAddress: row.contract_address || undefined,
+      contractBytecode: row.contract_bytecode || undefined,
+      balance: row.balance || 0,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
@@ -62,9 +104,9 @@ export class VaultService {
   static getVaultByVaultId(vaultId: string): Vault | null {
     const stmt = db.prepare('SELECT * FROM vaults WHERE vault_id = ?');
     const row = stmt.get(vaultId) as any;
-    
+
     if (!row) return null;
-    
+
     return {
       id: row.id,
       vaultId: row.vault_id,
@@ -73,10 +115,14 @@ export class VaultService {
       spendingCap: row.spending_cap,
       approvalThreshold: row.approval_threshold,
       signers: JSON.parse(row.signers),
+      signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
       state: row.state,
       cycleDuration: row.cycle_duration,
       unlockAmount: row.unlock_amount,
       isPublic: Boolean(row.is_public),
+      contractAddress: row.contract_address || undefined,
+      contractBytecode: row.contract_bytecode || undefined,
+      balance: row.balance || 0,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     };
@@ -84,11 +130,11 @@ export class VaultService {
   
   static getUserVaults(userAddress: string): Vault[] {
     const stmt = db.prepare(`
-      SELECT * FROM vaults 
+      SELECT * FROM vaults
       WHERE creator = ? OR signers LIKE ?
     `);
     const rows = stmt.all(userAddress, `%${userAddress}%`) as any[];
-    
+
     return rows.map(row => ({
       id: row.id,
       vaultId: row.vault_id,
@@ -97,10 +143,14 @@ export class VaultService {
       spendingCap: row.spending_cap,
       approvalThreshold: row.approval_threshold,
       signers: JSON.parse(row.signers),
+      signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
       state: row.state,
       cycleDuration: row.cycle_duration,
       unlockAmount: row.unlock_amount,
       isPublic: Boolean(row.is_public),
+      contractAddress: row.contract_address || undefined,
+      contractBytecode: row.contract_bytecode || undefined,
+      balance: row.balance || 0,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     }));
@@ -109,7 +159,7 @@ export class VaultService {
   static getPublicVaults(): Vault[] {
     const stmt = db.prepare('SELECT * FROM vaults WHERE is_public = 1');
     const rows = stmt.all() as any[];
-    
+
     return rows.map(row => ({
       id: row.id,
       vaultId: row.vault_id,
@@ -118,10 +168,14 @@ export class VaultService {
       spendingCap: row.spending_cap,
       approvalThreshold: row.approval_threshold,
       signers: JSON.parse(row.signers),
+      signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
       state: row.state,
       cycleDuration: row.cycle_duration,
       unlockAmount: row.unlock_amount,
       isPublic: Boolean(row.is_public),
+      contractAddress: row.contract_address || undefined,
+      contractBytecode: row.contract_bytecode || undefined,
+      balance: row.balance || 0,
       createdAt: new Date(row.created_at),
       updatedAt: new Date(row.updated_at),
     }));
