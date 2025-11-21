@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { fetchVault, fetchProposals, approveProposal } from '../utils/api';
+import { approveProposalOnChain } from '../utils/blockchain';
 import { AddSignerModal } from '../components/vaults/AddSignerModal';
 import { useWallet } from '../hooks/useWallet';
 
@@ -65,7 +66,27 @@ export default function VaultDetailPage() {
 
     try {
       setApprovingProposalId(proposalId);
-      await approveProposal(proposalId, wallet.address);
+
+      // Try on-chain approval if vault has contract address and wallet is connected
+      if (vault?.contractAddress && wallet.wallet && wallet.publicKey) {
+        try {
+          console.log('Attempting on-chain approval...');
+          const txid = await approveProposalOnChain(
+            wallet.wallet,
+            proposalId,
+            wallet.publicKey
+          );
+          console.log('On-chain approval successful, txid:', txid);
+          alert(`✅ Approval broadcast to blockchain!\nTransaction ID: ${txid}`);
+        } catch (onChainError: any) {
+          console.warn('On-chain approval failed, falling back to database:', onChainError);
+          // Fallback to database approval
+          await approveProposal(proposalId, wallet.address);
+        }
+      } else {
+        // No contract address or wallet not fully connected - use database approval
+        await approveProposal(proposalId, wallet.address);
+      }
 
       // Reload proposals
       if (id) {

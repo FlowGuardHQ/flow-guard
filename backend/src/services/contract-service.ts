@@ -4,7 +4,7 @@
  */
 
 import { Contract, ElectrumNetworkProvider, SignatureTemplate } from 'cashscript';
-import { binToHex, hexToBin } from '@bitauth/libauth';
+import { binToHex, hexToBin, cashAddressToLockingBytecode } from '@bitauth/libauth';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -47,6 +47,34 @@ export class ContractService {
   constructor(network: 'mainnet' | 'testnet3' | 'testnet4' | 'chipnet' = 'chipnet') {
     this.network = network;
     this.provider = new ElectrumNetworkProvider(network);
+  }
+
+  /**
+   * Convert BCH address to bytes20 (hash160)
+   * @param address BCH address (cashaddr format like bchtest:pq...)
+   * @returns Uint8Array of 20 bytes (hash160)
+   */
+  private addressToBytes20(address: string): Uint8Array {
+    try {
+      const decoded = cashAddressToLockingBytecode(address);
+
+      // Check if decoding failed (returns error string)
+      if (typeof decoded === 'string') {
+        throw new Error(decoded);
+      }
+
+      if (decoded.bytecode.length < 23) {
+        throw new Error('Invalid address bytecode length');
+      }
+
+      // Extract hash160 from P2PKH locking bytecode
+      // P2PKH format: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
+      // We extract bytes 3-23 (the 20-byte hash)
+      return decoded.bytecode.slice(3, 23);
+    } catch (error) {
+      console.error('Failed to convert address to bytes20:', error);
+      throw new Error(`Invalid BCH address: ${address}`);
+    }
   }
 
   /**
@@ -242,8 +270,7 @@ export class ContractService {
       const pk3 = hexToBin(signer3);
 
       // Convert recipient address to bytes20 (hash160)
-      // For now, we'll use a placeholder - in production, properly convert BCH address to hash160
-      const recipientHash = hexToBin('0000000000000000000000000000000000000000'); // Placeholder
+      const recipientHash = this.addressToBytes20(recipientAddress);
 
       // Create SignatureTemplate placeholders for each signer
       const sig1 = new SignatureTemplate(pk1);
@@ -410,8 +437,7 @@ export class ContractService {
       const pk1 = hexToBin(signer1);
 
       // Convert recipient address to bytes20 (hash160)
-      // Placeholder for now - in production, properly convert BCH address to hash160
-      const recipientHash = hexToBin('0000000000000000000000000000000000000000');
+      const recipientHash = this.addressToBytes20(recipientAddress);
 
       // Create signature template for the signer
       const sig1 = new SignatureTemplate(pk1);

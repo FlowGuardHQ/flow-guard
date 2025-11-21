@@ -107,5 +107,27 @@ router.post('/:id/execute-onchain', async (req, res) => {
   }
 });
 
+// Broadcast signed transaction
+router.post('/broadcast', async (req, res) => {
+  try {
+    const { txHex } = req.body;
+
+    if (!txHex) {
+      return res.status(400).json({ error: 'txHex is required' });
+    }
+
+    // Import ContractService
+    const { ContractService } = await import('../services/contract-service.js');
+    const contractService = new ContractService('chipnet');
+
+    // Broadcast the signed transaction
+    const txid = await contractService.broadcastTransaction(txHex);
+
+    res.json({ txid, success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
 

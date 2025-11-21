@@ -115,3 +115,20 @@ export async function addSigner(
   return response.json();
 }
 
+export async function broadcastTransaction(
+  txHex: string
+): Promise<{ txid: string; success: boolean }> {
+  const response = await fetch(`${API_BASE_URL}/proposals/broadcast`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ txHex }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to broadcast transaction' }));
+    throw new Error(error.error || 'Failed to broadcast transaction');
+  }
+  return response.json();
+}
+
