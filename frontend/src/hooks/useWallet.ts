@@ -12,7 +12,7 @@ import {
   SignedTransaction,
   IWalletConnector,
 } from '../types/wallet';
-import { SeleneConnector } from '../services/wallets/selene-connector';
+import { BCHExtensionConnector } from '../services/wallets/bch-extension-connector';
 import { MainnetConnector } from '../services/wallets/mainnet-connector';
 
 type UseWalletReturn = WalletState & WalletActions;
@@ -55,7 +55,7 @@ export function useWallet(): UseWalletReturn {
   }, []);
 
   /**
-   * Listen for Selene wallet events (account/network changes)
+   * Listen for BCH wallet events (account changes)
    */
   useEffect(() => {
     const handleAccountChange = (event: Event) => {
@@ -70,32 +70,19 @@ export function useWallet(): UseWalletReturn {
       localStorage.setItem('wallet_address', newAddress);
     };
 
-    const handleNetworkChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const newNetwork = customEvent.detail.network;
-
-      setState((prev) => ({
-        ...prev,
-        network: newNetwork,
-      }));
-
-      // Refresh balance when network changes
-      refreshBalance();
-    };
-
-    window.addEventListener('selene:accountChanged', handleAccountChange);
-    window.addEventListener('selene:networkChanged', handleNetworkChange);
+    window.addEventListener('bch:accountChanged', handleAccountChange);
 
     return () => {
-      window.removeEventListener('selene:accountChanged', handleAccountChange);
-      window.removeEventListener('selene:networkChanged', handleNetworkChange);
+      window.removeEventListener('bch:accountChanged', handleAccountChange);
     };
   }, []);
 
   /**
    * Connect to a wallet
+   * @param walletType - Type of wallet to connect to
+   * @param seedPhrase - Optional seed phrase for mainnet.cash wallet import
    */
-  const connect = useCallback(async (walletType: WalletType): Promise<void> => {
+  const connect = useCallback(async (walletType: WalletType, seedPhrase?: string): Promise<void> => {
     setState((prev) => ({ ...prev, isConnecting: true, error: null }));
 
     try {
@@ -103,8 +90,8 @@ export function useWallet(): UseWalletReturn {
 
       // Create appropriate connector
       switch (walletType) {
-        case WalletType.SELENE:
-          newConnector = new SeleneConnector();
+        case WalletType.BCH_EXTENSION:
+          newConnector = new BCHExtensionConnector();
           break;
         case WalletType.MAINNET:
           // Default to chipnet for development
@@ -118,14 +105,19 @@ export function useWallet(): UseWalletReturn {
       const isAvailable = await newConnector.isAvailable();
       if (!isAvailable) {
         throw new Error(
-          walletType === WalletType.SELENE
-            ? 'Selene wallet extension not found. Please install Selene.'
+          walletType === WalletType.BCH_EXTENSION
+            ? 'BCH wallet extension not found. Please install Badger or Paytaca wallet.'
             : 'mainnet.cash library not available'
         );
       }
 
-      // Connect
-      const walletInfo = await newConnector.connect();
+      // Connect (pass seed phrase if provided for mainnet.cash)
+      let walletInfo;
+      if (walletType === WalletType.MAINNET && seedPhrase) {
+        walletInfo = await (newConnector as MainnetConnector).connect(seedPhrase);
+      } else {
+        walletInfo = await newConnector.connect();
+      }
 
       // Update state
       setState({
