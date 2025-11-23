@@ -25,6 +25,24 @@ export default function VaultDetailPage() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
+  const loadTransactions = async () => {
+    if (!id || !vault?.contractAddress) return;
+    try {
+      setLoadingTransactions(true);
+      const API_BASE_URL = import.meta.env.VITE_API_URL ||
+        (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+      const response = await fetch(`${API_BASE_URL}/vaults/${id}/transactions`);
+      if (response.ok) {
+        const data = await response.json();
+        setTransactions(data.transactions || []);
+      }
+    } catch (err) {
+      console.error('Failed to load transactions:', err);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
   useEffect(() => {
     const loadVault = async () => {
       if (!id) return;
@@ -65,7 +83,7 @@ export default function VaultDetailPage() {
       if (!id || !vault?.contractAddress) return;
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL ||
-          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
+          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
         const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
         if (response.ok) {
           const data = await response.json();
@@ -81,26 +99,15 @@ export default function VaultDetailPage() {
   }, [id, vault?.contractAddress]);
 
   useEffect(() => {
-    const loadTransactions = async () => {
-      if (!id || !vault?.contractAddress) return;
-      try {
-        setLoadingTransactions(true);
-        const API_BASE_URL = import.meta.env.VITE_API_URL ||
-          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
-        const response = await fetch(`${API_BASE_URL}/vaults/${id}/transactions`);
-        if (response.ok) {
-          const data = await response.json();
-          setTransactions(data.transactions || []);
-        }
-      } catch (err) {
-        console.error('Failed to load transactions:', err);
-      } finally {
-        setLoadingTransactions(false);
-      }
-    };
-
     loadTransactions();
   }, [id, vault?.contractAddress]);
+
+  // Reload transactions after successful operations
+  useEffect(() => {
+    if (id && (approvingProposalId === null && executingProposalId === null && unlockingCycle === null)) {
+      loadTransactions();
+    }
+  }, [id, approvingProposalId, executingProposalId, unlockingCycle]);
 
   const role = vault?.role || 'viewer';
   const isCreator = role === 'creator';
@@ -123,7 +130,11 @@ export default function VaultDetailPage() {
           const txid = await approveProposalOnChain(
             wallet,
             proposalId,
-            wallet.publicKey
+            wallet.publicKey,
+            {
+              vaultId: id,
+              proposalId,
+            }
           );
           console.log('On-chain approval successful, txid:', txid);
           alert(`SUCCESS: Approval Successful!\n\nYour signature has been broadcast to the BCH blockchain.\n\nTransaction ID: ${txid}\n\nView on explorer: https://chipnet.chaingraph.cash/tx/${txid}`);
@@ -186,7 +197,13 @@ export default function VaultDetailPage() {
       setExecutingProposalId(proposalId);
       console.log('Attempting on-chain payout execution...');
 
-      const txid = await executePayoutOnChain(wallet, proposalId);
+      const proposal = proposals.find(p => p.id === proposalId);
+      const txid = await executePayoutOnChain(wallet, proposalId, {
+        vaultId: id,
+        proposalId,
+        amount: proposal?.amount,
+        toAddress: proposal?.recipient,
+      });
 
       console.log('On-chain payout execution successful, txid:', txid);
       alert(
@@ -264,7 +281,10 @@ export default function VaultDetailPage() {
       setUnlockingCycle(cycleNumber);
       console.log('Attempting on-chain cycle unlock...');
 
-      const txid = await unlockCycleOnChain(wallet, id, cycleNumber, wallet.publicKey);
+      const txid = await unlockCycleOnChain(wallet, id, cycleNumber, wallet.publicKey, {
+        vaultId: id,
+        amount: vault?.unlockAmount,
+      });
 
       console.log('On-chain cycle unlock successful, txid:', txid);
       alert(
@@ -282,7 +302,7 @@ export default function VaultDetailPage() {
 
         // Reload eligible cycles
         const API_BASE_URL = import.meta.env.VITE_API_URL ||
-          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
+          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
         const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
         if (response.ok) {
           const data = await response.json();
@@ -645,58 +665,73 @@ export default function VaultDetailPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {transactions.map((tx: any, index: number) => (
+                {transactions.map((tx: any) => (
                   <div
-                    key={index}
-                    className="p-4 border border-gray-200 rounded-lg hover:border-blue-500 transition-colors"
+                    key={tx.id}
+                    className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-600 transition-colors bg-white dark:bg-[#1a1a1a]"
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span
                             className={`px-2 py-1 rounded text-xs font-semibold ${
-                              tx.type === 'proposal_created'
-                                ? 'bg-blue-100 text-blue-800'
-                                : tx.type === 'proposal_approved'
-                                ? 'bg-green-100 text-green-800'
-                                : tx.type === 'payout_executed'
-                                ? 'bg-purple-100 text-purple-800'
-                                : tx.type === 'cycle_unlocked'
-                                ? 'bg-orange-100 text-orange-800'
-                                : 'bg-gray-100 text-gray-800'
+                              tx.txType === 'proposal'
+                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200'
+                                : tx.txType === 'approve'
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                : tx.txType === 'payout'
+                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200'
+                                : tx.txType === 'unlock'
+                                ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
                             }`}
                           >
-                            {tx.type?.replace(/_/g, ' ').toUpperCase() || 'TRANSACTION'}
+                            {tx.txType?.toUpperCase() || 'TRANSACTION'}
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded text-xs font-semibold ${
+                              tx.status === 'confirmed'
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200'
+                                : tx.status === 'pending'
+                                ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200'
+                                : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+                            }`}
+                          >
+                            {tx.status?.toUpperCase() || 'PENDING'}
                           </span>
                           {tx.amount && (
-                            <span className="font-semibold text-gray-900">{tx.amount} BCH</span>
+                            <span className="font-semibold text-gray-900 dark:text-white">
+                              {tx.amount} BCH
+                            </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600">
-                          {tx.description || 'On-chain transaction'}
-                        </p>
+                        {tx.toAddress && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                            To: <span className="font-mono">{tx.toAddress.slice(0, 20)}...</span>
+                          </p>
+                        )}
                       </div>
-                      <div className="text-right text-xs text-gray-500">
-                        {tx.timestamp && new Date(tx.timestamp).toLocaleString()}
+                      <div className="text-right text-xs text-gray-500 dark:text-gray-400">
+                        {tx.createdAt && new Date(tx.createdAt).toLocaleString()}
                       </div>
                     </div>
                     <div className="mt-3 flex items-center justify-between">
                       <div className="text-xs">
-                        <span className="text-gray-600">TX ID: </span>
+                        <span className="text-gray-600 dark:text-gray-400">TX Hash: </span>
                         <a
-                          href={`https://chipnet.chaingraph.cash/tx/${tx.txid}`}
+                          href={`https://chipnet.chaingraph.cash/tx/${tx.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="font-mono text-blue-600 hover:underline break-all"
+                          className="font-mono text-blue-600 dark:text-blue-400 hover:underline break-all"
                         >
-                          {tx.txid?.slice(0, 16)}...{tx.txid?.slice(-16)}
+                          {tx.txHash?.slice(0, 16)}...{tx.txHash?.slice(-16)}
                         </a>
                       </div>
                       <a
-                        href={`https://chipnet.chaingraph.cash/tx/${tx.txid}`}
+                        href={`https://chipnet.chaingraph.cash/tx/${tx.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                       >
                         View on Explorer
                         <ExternalLink className="w-3 h-3" />

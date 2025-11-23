@@ -1,5 +1,6 @@
+// Use relative URL in dev to leverage Vite proxy, full URL in production
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : 'http://localhost:3001/api');
+  (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
 
 export interface VaultsResponse {
   created: any[];
@@ -116,14 +117,22 @@ export async function addSigner(
 }
 
 export async function broadcastTransaction(
-  txHex: string
+  txHex: string,
+  metadata?: {
+    txType?: 'create' | 'unlock' | 'proposal' | 'approve' | 'payout';
+    vaultId?: string;
+    proposalId?: string;
+    amount?: number;
+    fromAddress?: string;
+    toAddress?: string;
+  }
 ): Promise<{ txid: string; success: boolean }> {
   const response = await fetch(`${API_BASE_URL}/proposals/broadcast`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ txHex }),
+    body: JSON.stringify({ txHex, ...metadata }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to broadcast transaction' }));

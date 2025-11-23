@@ -6,6 +6,7 @@
 export enum WalletType {
   BCH_EXTENSION = 'bch_extension', // Badger, Paytaca, etc.
   MAINNET = 'mainnet',
+  ELECTRON_CASH = 'electron_cash', // Electron Cash desktop wallet via RPC
 }
 
 export interface WalletBalance {
@@ -59,6 +60,7 @@ export interface WalletActions {
   disconnect: () => Promise<void>;
   getPublicKey: () => Promise<string | null>; // NEW: Expose public key getter
   signTransaction: (tx: Transaction) => Promise<SignedTransaction>;
+  signRawTransaction?: (txHex: string) => Promise<string>; // For Electron Cash and wallets that support it
   signMessage: (message: string) => Promise<string>;
   refreshBalance: () => Promise<void>;
 }
