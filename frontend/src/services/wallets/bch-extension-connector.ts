@@ -276,6 +276,8 @@ export class BCHExtensionConnector implements IWalletConnector {
 
   /**
    * Sign and broadcast transaction
+   * Note: Standard BCH wallet APIs support simple sends, not raw transaction hex signing
+   * For covenant transactions, we need raw hex signing which may not be supported
    */
   async signTransaction(tx: Transaction): Promise<SignedTransaction> {
     if (!this.wallet) {
@@ -283,7 +285,30 @@ export class BCHExtensionConnector implements IWalletConnector {
     }
 
     try {
-      // Use the send method which is standard across BCH wallets
+      // Check if transaction has raw hex data (for covenant transactions)
+      if (tx.data && typeof tx.data === 'string' && tx.data.length > 100) {
+        // This is likely a raw transaction hex
+        // Try to use signTransaction method if available
+        if (this.wallet.signTransaction && typeof this.wallet.signTransaction === 'function') {
+          try {
+            const result = await this.wallet.signTransaction({ hex: tx.data });
+            return {
+              txId: result.txid || '',
+              hex: result.hex || tx.data,
+            };
+          } catch (rawSignError) {
+            console.warn('Raw transaction signing not supported, falling back to send method');
+          }
+        }
+        
+        // If raw signing not available, throw error
+        throw new Error(
+          'Covenant transaction signing requires raw hex support. ' +
+          'Your wallet may not support this feature. Please use a compatible wallet or contact support.'
+        );
+      }
+
+      // For simple sends, use the standard send method
       const result = await this.wallet.send([
         {
           address: tx.to,
@@ -299,6 +324,29 @@ export class BCHExtensionConnector implements IWalletConnector {
       console.error('Failed to sign transaction:', error);
       throw new Error('Failed to sign transaction. User may have rejected.');
     }
+  }
+
+  /**
+   * Sign raw transaction hex (if supported by wallet)
+   * This is required for covenant transactions
+   */
+  async signRawTransaction?(txHex: string): Promise<string> {
+    if (!this.wallet) {
+      throw new Error('Wallet not connected');
+    }
+
+    // Check if wallet supports raw transaction signing
+    if (this.wallet.signTransaction && typeof this.wallet.signTransaction === 'function') {
+      try {
+        const result = await this.wallet.signTransaction({ hex: txHex });
+        return result.hex || txHex;
+      } catch (error) {
+        console.error('Raw transaction signing failed:', error);
+        throw new Error('Wallet does not support raw transaction signing');
+      }
+    }
+
+    throw new Error('Wallet does not support raw transaction signing');
   }
 
   /**
