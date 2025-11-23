@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useWallet } from '../hooks/useWallet';
+import { useTransactionConfirm } from '../hooks/useTransactionConfirm';
 import { createVault, updateVaultBalance } from '../utils/api';
 import { depositToVault } from '../utils/blockchain';
 
 export default function CreateVaultPage() {
   const navigate = useNavigate();
   const wallet = useWallet();
+  const { confirmTransaction, TransactionConfirmModal } = useTransactionConfirm();
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [depositStatus, setDepositStatus] = useState<'idle' | 'creating' | 'depositing' | 'updating' | 'success' | 'error'>('idle');
@@ -103,6 +105,32 @@ export default function CreateVaultPage() {
       if (vaultData.unlockAmount <= 0) {
         throw new Error('Unlock amount must be greater than 0');
       }
+      
+      // Validate deposit amount is reasonable
+      // For chipnet, max 100 BCH is reasonable; for mainnet, max 1000 BCH
+      const network = wallet.network || 'chipnet';
+      const maxDeposit = network === 'mainnet' ? 1000 : 100;
+      
+      if (vaultData.totalDeposit > maxDeposit) {
+        throw new Error(
+          `Deposit amount (${vaultData.totalDeposit} BCH) exceeds the maximum allowed for ${network} (${maxDeposit} BCH). ` +
+          `If you intended to enter satoshis, please convert: ${vaultData.totalDeposit} satoshis = ${(vaultData.totalDeposit / 100000000).toFixed(8)} BCH`
+        );
+      }
+      
+      // Warn if amount seems suspiciously large (whole number > 1000 might be satoshis)
+      if (vaultData.totalDeposit >= 1000 && vaultData.totalDeposit === Math.floor(vaultData.totalDeposit)) {
+        const possibleSatoshis = vaultData.totalDeposit;
+        const possibleBCH = possibleSatoshis / 100000000;
+        if (possibleBCH < maxDeposit) {
+          throw new Error(
+            `The deposit amount (${vaultData.totalDeposit}) seems unusually large. ` +
+            `Did you mean to enter ${possibleBCH.toFixed(8)} BCH instead? ` +
+            `If you entered satoshis, please convert to BCH (divide by 100,000,000).`
+          );
+        }
+      }
+      
       if (validSigners.length !== 3) {
         throw new Error('Exactly 3 signers are required for blockchain deployment');
       }
@@ -120,7 +148,9 @@ export default function CreateVaultPage() {
         
         if (walletBalanceBCH < requiredAmount) {
           throw new Error(
-            `Insufficient balance. You have ${walletBalanceBCH.toFixed(4)} BCH, but need ${requiredAmount.toFixed(4)} BCH (including fees).`
+            `Insufficient balance. You have ${walletBalanceBCH.toFixed(4)} BCH, but need ${requiredAmount.toFixed(4)} BCH (including fees). ` +
+            `Please check that you entered the deposit amount in BCH, not satoshis. ` +
+            `If you entered satoshis, convert to BCH by dividing by 100,000,000.`
           );
         }
       }
@@ -139,10 +169,12 @@ export default function CreateVaultPage() {
         
         try {
           // Deposit BCH to the contract address
+          // For mainnet.cash wallets, show confirmation dialog
           const depositTxid = await depositToVault(
             wallet,
             newVault.contractAddress,
-            vaultData.totalDeposit
+            vaultData.totalDeposit,
+            wallet.walletType === 'mainnet' ? confirmTransaction : undefined
           );
 
           setTxid(depositTxid);
@@ -183,8 +215,10 @@ export default function CreateVaultPage() {
   };
 
   return (
-    <div className="section-spacious">
-      <div className="max-w-3xl mx-auto">
+    <>
+      <TransactionConfirmModal />
+      <div className="section-spacious">
+        <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <Link to="/vaults" className="text-[--color-primary] hover:underline">
             ← Back to Vaults
@@ -335,9 +369,21 @@ export default function CreateVaultPage() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary"
                   placeholder="0.00"
                   step="0.01"
+                  min="0.00001"
+                  max={wallet.network === 'mainnet' ? 1000 : 100}
                 />
                 <p className="mt-2 text-sm text-gray-600">
                   This is the total amount of BCH you'll deposit into the vault.
+                  {wallet.network === 'chipnet' && (
+                    <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                      ⚠️ Maximum {100} BCH for chipnet testing. Enter amount in BCH (not satoshis).
+                    </span>
+                  )}
+                  {wallet.network === 'mainnet' && (
+                    <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                      ⚠️ Maximum {1000} BCH for mainnet. Enter amount in BCH (not satoshis).
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -571,6 +617,7 @@ export default function CreateVaultPage() {
         </Card>
       </div>
     </div>
+    </>
   );
 }
 

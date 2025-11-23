@@ -286,7 +286,7 @@ export class VaultService {
     // Optionally log the transaction
     if (txid) {
       const txStmt = db!.prepare(`
-        INSERT INTO transactions (id, txid, vault_id, type, amount, to_address, status)
+        INSERT INTO transactions (id, tx_hash, vault_id, tx_type, amount, to_address, status)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `);
       txStmt.run(

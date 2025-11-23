@@ -299,12 +299,14 @@ export async function unlockCycleOnChain(
  * @param wallet The wallet hook return value
  * @param contractAddress The vault contract address (P2SH)
  * @param amountBCH The amount to deposit in BCH
+ * @param onConfirm Optional confirmation callback that returns a promise resolving to boolean
  * @returns Transaction ID
  */
 export async function depositToVault(
   wallet: WalletInterface,
   contractAddress: string,
-  amountBCH: number
+  amountBCH: number,
+  onConfirm?: (details: { amount: number; recipient: string; network: 'mainnet' | 'testnet' | 'chipnet' }) => Promise<boolean>
 ): Promise<string> {
   try {
     if (!wallet.address) {
@@ -317,6 +319,21 @@ export async function depositToVault(
 
     // Convert BCH to satoshis
     const amountSatoshis = Math.floor(amountBCH * 100000000);
+
+    // For mainnet.cash wallets, show confirmation dialog if callback provided
+    if (onConfirm && wallet.walletType === 'mainnet') {
+      // Get network from wallet state (it's part of WalletState)
+      const network = ((wallet as any).network || 'chipnet') as 'mainnet' | 'testnet' | 'chipnet';
+      const confirmed = await onConfirm({
+        amount: amountBCH,
+        recipient: contractAddress,
+        network,
+      });
+
+      if (!confirmed) {
+        throw new Error('Transaction cancelled by user');
+      }
+    }
 
     // Use wallet's signTransaction method to send BCH
     // This will use the wallet's native send() method (mainnet.cash or extension)
