@@ -1,5 +1,5 @@
 # Stage 1: Build
-FROM node:22-alpine AS builder
+FROM --platform=linux/amd64 node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -25,7 +25,7 @@ ENV VITE_BCH_NETWORK=${VITE_BCH_NETWORK:-chipnet}
 RUN pnpm build
 
 # Stage 2: Serve with nginx
-FROM nginx:alpine
+FROM --platform=linux/amd64 nginx:alpine
 
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html

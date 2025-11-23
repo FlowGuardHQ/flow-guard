@@ -142,38 +142,36 @@ flowguard/
 
 ## 📦 Deployment
 
-### Backend (fly.io)
+### Docker Deployment (Render)
 
-The backend is deployed on fly.io:
+We recommend deploying to Render using Docker. It's the simplest way to get both frontend and backend running together.
 
+**Quick Start:**
+1. Push your code to GitHub
+2. Go to [dashboard.render.com](https://dashboard.render.com)
+3. Click "New +" → "Blueprint"
+4. Connect your repository
+5. Render will detect `render.yaml` and deploy both services
+
+See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for the complete guide.
+
+### Alternative: Split Deployment
+
+You can also deploy frontend and backend separately:
+
+**Backend (fly.io):**
 ```bash
 cd backend
-
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-
-# Login and deploy
-fly auth login
 fly deploy
 ```
 
-Production API: `https://flowguard-backend.fly.dev`
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment guide.
-
-### Frontend (Vercel)
-
-The frontend is deployed on Vercel:
-
+**Frontend (Vercel):**
 ```bash
 cd frontend
-
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
 vercel
 ```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment guide.
 
 ## 🔧 Environment Variables
 
@@ -221,11 +219,8 @@ VITE_API_URL=http://localhost:3001/api  # Development
 ## 📖 Documentation
 
 - [**User Documentation**](./frontend/src/pages/DocsPage.tsx) - Guides for creating vaults, proposals, and managing treasuries
-- [**Deployment Guide**](./docs/DEPLOYMENT.md) - Deploy contracts and services to chipnet
-- [**Next Steps**](./docs/NEXT_STEPS.md) - Post-deployment testing and usage guide
-- [**Testing Guide**](./docs/TESTING.md) - How to test contract functions
-- [**API Reference**](./docs/API.md) - Backend API endpoints
-- [**Architecture**](./docs/ARCHITECTURE.md) - System design and architecture
+- [**Render Deployment Guide**](./RENDER_DEPLOYMENT.md) - Deploy to Render using Docker (recommended)
+- [**Deployment Guide**](./DEPLOYMENT.md) - Alternative deployment options (Fly.io, Vercel)
 - [**Product Requirements**](./docs/PRD.md) - Product requirements and roadmap
 
 ## 🤝 Use Cases

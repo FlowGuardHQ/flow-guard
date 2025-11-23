@@ -217,8 +217,8 @@ export default function CreateVaultPage() {
   return (
     <>
       <TransactionConfirmModal />
-      <div className="section-spacious">
-        <div className="max-w-3xl mx-auto">
+    <div className="section-spacious">
+      <div className="max-w-3xl mx-auto">
         <div className="mb-8">
           <Link to="/vaults" className="text-[--color-primary] hover:underline">
             ← Back to Vaults

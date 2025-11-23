@@ -6,7 +6,7 @@ const CONTRACT_PATH = path.join(__dirname, '..', 'FlowGuardEnhanced.cash');
 
 describe('FlowGuardEnhanced.cash', () => {
   let artifact;
-
+  
   before(() => {
     artifact = compileFile(CONTRACT_PATH);
   });
@@ -24,7 +24,7 @@ describe('FlowGuardEnhanced.cash', () => {
       'spendingCap',
     ]);
   });
-
+  
   it('exposes Layla CHIP entrypoints', () => {
     const fnNames = artifact.abi.map((entry) => entry.name);
     expect(fnNames).to.include.members(['unlock', 'createProposal', 'approveProposal', 'executePayout']);

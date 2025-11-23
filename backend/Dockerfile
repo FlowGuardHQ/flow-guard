@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM --platform=linux/amd64 node:22-alpine
 
 # Install dependencies for better-sqlite3
 RUN apk add --no-cache python3 py3-setuptools make g++ sqlite-dev

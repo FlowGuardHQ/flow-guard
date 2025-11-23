@@ -1,0 +1,52 @@
+services:
+  # Backend API Service
+  - type: web
+    name: flowguard-backend
+    runtime: docker
+    repo: https://github.com/Goodnessmbakara/flow-guard.git
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: BCH_NETWORK
+        value: chipnet
+      - key: DATABASE_PATH
+        value: /opt/data/flowguard.db
+    disk:
+      name: flowguard-data
+      mountPath: /opt/data
+      sizeGB: 1
+    scaling:
+      minInstances: 1
+      maxInstances: 1
+
+  # Frontend Web Service
+  - type: web
+    name: flowguard-frontend
+    runtime: docker
+    repo: https://github.com/Goodnessmbakara/flow-guard.git
+    rootDir: frontend
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    region: oregon
+    healthCheckPath: /
+    envVars:
+      - key: FRONTEND_PORT
+        value: 80
+      - key: VITE_API_URL
+        # This will be set to the backend's external URL
+        # Update this after deployment with the actual backend URL
+        value: https://flowguard-backend.onrender.com/api
+      - key: VITE_BCH_NETWORK
+        value: chipnet
+    scaling:
+      minInstances: 1
+      maxInstances: 1

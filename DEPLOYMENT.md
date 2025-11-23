@@ -121,10 +121,12 @@ If you prefer a different setup:
 - Supports persistent storage
 - Simpler than split deployment
 
-### Option 2: Render
-- Can deploy both frontend and backend
-- Supports background workers
+### Option 2: Render (Docker)
+- Can deploy both frontend and backend using Docker
+- Supports persistent storage for SQLite database
 - Good for monorepos
+- Free tier available (with limitations)
+- See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for detailed instructions
 
 ### Option 3: Self-Hosted
 - Deploy backend to VPS (DigitalOcean, Linode, etc.)
