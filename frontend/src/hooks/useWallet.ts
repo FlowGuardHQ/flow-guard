@@ -53,7 +53,8 @@ export function useWallet(): UseWalletReturn {
     };
 
     initWallet();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // connect is stable, no need to include in deps
 
   /**
    * Listen for BCH wallet events (account changes)
@@ -121,17 +122,18 @@ export function useWallet(): UseWalletReturn {
         walletInfo = await newConnector.connect();
       }
 
-      // Update state
-      setState({
+      // Update state - use functional update to ensure we're working with latest state
+      setState((prev) => ({
+        ...prev,
         walletType,
         address: walletInfo.address,
-        publicKey: walletInfo.publicKey || null, // NEW: Store public key
+        publicKey: walletInfo.publicKey || null,
         balance: walletInfo.balance || null,
         isConnected: true,
         isConnecting: false,
         network: walletInfo.network,
         error: null,
-      });
+      }));
 
       setConnector(newConnector);
 
@@ -141,6 +143,10 @@ export function useWallet(): UseWalletReturn {
       if (walletInfo.publicKey) {
         localStorage.setItem('wallet_publickey', walletInfo.publicKey);
       }
+
+      // Force a microtask to ensure state update is processed
+      // This helps React batch and process the state update before any dependent operations
+      await new Promise<void>(resolve => queueMicrotask(() => resolve()));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect wallet';
 

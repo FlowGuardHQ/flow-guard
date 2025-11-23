@@ -67,6 +67,15 @@ export function WalletModal({
 
     try {
       await onSelectWallet(walletType, seedPhrase || undefined);
+      // Wait for React to process the state update and re-render components
+      // This ensures the wallet connection is reflected in the UI before closing the modal
+      await new Promise(resolve => {
+        // Use requestAnimationFrame to wait for the next render cycle
+        requestAnimationFrame(() => {
+          // Then use setTimeout to ensure state has propagated
+          setTimeout(resolve, 50);
+        });
+      });
       onClose(); // Close modal on success
       setShowSeedInput(false);
       setSeedPhrase('');
