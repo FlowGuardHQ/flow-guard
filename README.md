@@ -10,10 +10,10 @@
 
 <p align="center">
   <a href="#features">Features</a> •
-  <a href="#quick-start">Quick Start</a> •
-  <a href="#architecture">Architecture</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#local-development">Local Development</a> •
   <a href="#deployment">Deployment</a> •
-  <a href="#contributing">Contributing</a>
+  <a href="#architecture">Architecture</a>
 </p>
 
 ---
@@ -50,6 +50,179 @@ Built for Bitcoin Cash's advanced covenant technology:
 
 **Current Status**: We've got a working version on chipnet right now. The basic multisig contract is deployed and handling real transactions. The advanced contracts using all four Layla CHIPs are written and tested, but they're waiting for the CHIPs to activate on chipnet (November 2025).
 
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+Before you begin, make sure you have the following installed:
+
+1. **Node.js 18+** - [Download from nodejs.org](https://nodejs.org/)
+   ```bash
+   # Verify installation
+   node --version  # Should show v18.0.0 or higher
+   ```
+
+2. **pnpm** - Package manager (we use pnpm, not npm)
+   ```bash
+   # Install pnpm globally
+   npm install -g pnpm
+   
+   # Verify installation
+   pnpm --version  # Should show 8.0.0 or higher
+   ```
+
+3. **Git** - [Download from git-scm.com](https://git-scm.com/)
+   ```bash
+   # Verify installation
+   git --version
+   ```
+
+4. **BCH Wallet Extension** (for testing):
+   - [Paytaca Wallet](https://www.paytaca.com/) (recommended)
+   - [Badger Wallet](https://badger.bitcoin.com/)
+   
+   Install one of these browser extensions to interact with FlowGuard.
+
+5. **Chipnet BCH** (testnet funds):
+   - Get testnet BCH from the [Chipnet Faucet](https://tbch.googol.cash/)
+   - You'll need this to create vaults and test transactions
+
+### Installation
+
+Follow these steps to get FlowGuard running on your local machine:
+
+#### Step 1: Clone the Repository
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/flowguard.git
+
+# Navigate into the project directory
+cd flowguard
+```
+
+#### Step 2: Install Dependencies
+
+FlowGuard uses a monorepo structure with workspaces. Install all dependencies at once:
+
+```bash
+# From the root directory, install all workspace dependencies
+pnpm install
+```
+
+This command will:
+- Install dependencies for the root workspace
+- Install dependencies for `backend/`
+- Install dependencies for `frontend/`
+- Install dependencies for `contracts/`
+
+**Expected output**: You should see installation progress for all three workspaces. This may take 2-3 minutes.
+
+#### Step 3: Set Up Environment Variables
+
+Create environment variable files for both backend and frontend:
+
+**Backend environment file** (`backend/.env`):
+```bash
+# Navigate to backend directory
+cd backend
+
+# Create .env file (copy from example)
+cp ../env.example .env
+
+# Edit .env with your preferred editor
+# Minimum required variables:
+PORT=3001
+BCH_NETWORK=chipnet
+DATABASE_PATH=./database/flowguard.db
+```
+
+**Frontend environment file** (`frontend/.env`):
+```bash
+# Navigate to frontend directory
+cd ../frontend
+
+# Create .env file
+cat > .env << EOF
+VITE_API_URL=http://localhost:3001/api
+VITE_BCH_NETWORK=chipnet
+EOF
+```
+
+> **Note**: The frontend `.env` file is optional for local development. The Vite dev server will use the proxy configuration by default.
+
+#### Step 4: Start the Development Servers
+
+You have two options for running the app:
+
+**Option A: Run Everything Together (Recommended)**
+
+From the root directory:
+```bash
+# Start both backend and frontend simultaneously
+pnpm dev
+```
+
+This will:
+- Start the backend on `http://localhost:3001`
+- Start the frontend on `http://localhost:5173`
+- Both servers will watch for file changes and auto-reload
+
+**Option B: Run Separately**
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+pnpm dev
+```
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+pnpm dev
+```
+
+#### Step 5: Verify Everything is Working
+
+1. **Check Backend Health**:
+   - Open your browser and visit: `http://localhost:3001/health`
+   - You should see: `{"status":"ok","service":"flowguard-backend","blockchain":"connected"}`
+
+2. **Check Frontend**:
+   - Open your browser and visit: `http://localhost:5173`
+   - You should see the FlowGuard dashboard
+
+3. **Check API**:
+   - Visit: `http://localhost:3001/api`
+   - You should see: `{"message":"FlowGuard API","version":"0.1.0","network":"chipnet"}`
+
+#### Step 6: Connect Your Wallet
+
+1. Open `http://localhost:5173` in your browser
+2. Click the "Connect Wallet" button (usually in the top right)
+3. Select your BCH wallet extension (Paytaca or Badger)
+4. Approve the connection request
+5. Make sure your wallet is connected to **Chipnet** (testnet), not mainnet
+
+> **Important**: FlowGuard is currently deployed on chipnet (testnet). Make sure your wallet is set to chipnet mode.
+
+#### Step 7: Create Your First Vault
+
+1. Navigate to "Create Vault" in the dashboard
+2. Fill in the vault details:
+   - **Name**: Give your vault a descriptive name
+   - **Deposit Amount**: Amount of BCH to deposit (use small amounts for testing)
+   - **Unlock Schedule**: Choose how often funds unlock (monthly, weekly, etc.)
+   - **Signers**: Add wallet addresses that can approve proposals
+   - **Approval Threshold**: How many signers must approve (e.g., 2-of-3)
+3. Review and sign the transaction with your wallet
+4. Wait for confirmation (usually takes a few seconds on chipnet)
+5. Your vault is now live on-chain!
+
+---
+
 ## 🏗️ Architecture
 
 FlowGuard is a full-stack application consisting of three layers:
@@ -58,16 +231,19 @@ FlowGuard is a full-stack application consisting of three layers:
 ┌─────────────────────────────────────────┐
 │         Frontend (React + TS)           │
 │  Wallet connection, UI, tx signing      │
+│  Port: 5173                             │
 └──────────────┬──────────────────────────┘
-               │
+               │ HTTP API calls
 ┌──────────────▼──────────────────────────┐
 │     Backend API (Node.js + SQLite)      │
 │  Indexing, query APIs, state mirroring  │
+│  Port: 3001                             │
 └──────────────┬──────────────────────────┘
-               │
+               │ Blockchain queries
 ┌──────────────▼──────────────────────────┐
 │   On-Chain (CashScript Covenants)       │
 │  Treasury rules, enforcement, custody   │
+│  Network: Bitcoin Cash Chipnet          │
 └─────────────────────────────────────────┘
 ```
 
@@ -75,76 +251,160 @@ FlowGuard is a full-stack application consisting of three layers:
 
 ```
 flowguard/
-├── contracts/          # CashScript smart contracts (Layla CHIPs)
-├── frontend/           # React + TypeScript frontend
+├── contracts/              # CashScript smart contracts
+│   ├── FlowGuardEnhanced.cash  # Main contract
+│   └── tests/              # Contract tests
+│
+├── frontend/               # React + TypeScript frontend
 │   ├── src/
-│   │   ├── components/ # UI components
-│   │   ├── pages/      # Page components
-│   │   ├── hooks/      # React hooks (wallet, etc.)
-│   │   ├── services/   # Wallet connectors, API clients
-│   │   └── utils/      # Utilities and helpers
-│   └── public/         # Static assets
-├── backend/            # Express.js + SQLite backend
+│   │   ├── components/     # UI components
+│   │   │   ├── auth/       # Authentication components
+│   │   │   ├── layout/     # Layout components (Header, Sidebar, etc.)
+│   │   │   ├── ui/         # Reusable UI components
+│   │   │   └── vaults/     # Vault-specific components
+│   │   ├── pages/          # Page components (Home, Vaults, Proposals, etc.)
+│   │   ├── hooks/          # React hooks (wallet, transactions)
+│   │   ├── services/       # Wallet connectors, API clients
+│   │   ├── utils/          # Utilities and helpers
+│   │   └── styles/          # Global styles
+│   ├── public/             # Static assets
+│   ├── Dockerfile          # Production Docker image
+│   └── vite.config.ts      # Vite configuration
+│
+├── backend/                # Express.js + SQLite backend
 │   ├── src/
-│   │   ├── routes/     # API routes
-│   │   ├── database/   # Database schema and queries
-│   │   └── index.ts    # Entry point
-│   └── Dockerfile      # Production Docker image
-└── docs/               # Documentation
+│   │   ├── api/            # API route handlers
+│   │   │   ├── vaults.ts   # Vault endpoints
+│   │   │   ├── proposals.ts # Proposal endpoints
+│   │   │   ├── cycles.ts   # Cycle endpoints
+│   │   │   ├── transactions.ts # Transaction endpoints
+│   │   │   └── deployment.ts # Contract deployment endpoints
+│   │   ├── database/       # Database schema and setup
+│   │   ├── models/         # Data models
+│   │   ├── services/       # Business logic services
+│   │   │   ├── blockchain-monitor.ts # Monitors blockchain state
+│   │   │   ├── cycle-unlock-scheduler.ts # Schedules cycle unlocks
+│   │   │   ├── contract-service.ts # Contract interactions
+│   │   │   └── vaultService.ts # Vault management
+│   │   └── index.ts        # Express server entry point
+│   ├── database/           # SQLite database files (created at runtime)
+│   ├── Dockerfile          # Production Docker image
+│   └── package.json        # Backend dependencies
+│
+├── docs/                   # Documentation
+│   └── PRD.md             # Product Requirements Document
+│
+├── docker-compose.yml      # Docker Compose configuration
+├── render.yaml            # Render deployment configuration
+├── package.json           # Root workspace configuration
+└── README.md              # This file
 ```
 
-## 🚀 Quick Start
+### How It Works
 
-### Prerequisites
+1. **Frontend**: React app that connects to BCH wallets and displays the UI
+2. **Backend**: Express API that:
+   - Monitors the blockchain for vault state changes (every 30 seconds)
+   - Schedules cycle unlocks (checks every 1 minute)
+   - Provides REST APIs for vaults, proposals, cycles, and transactions
+   - Stores indexed data in SQLite for fast queries
+3. **Smart Contracts**: CashScript contracts deployed on-chain that enforce treasury rules
 
-- **Node.js 18+** and **pnpm** installed
-- **BCH Wallet Extension**: [Paytaca](https://www.paytaca.com/) or [Badger Wallet](https://badger.bitcoin.com/)
-- **Chipnet BCH**: Get testnet BCH from the [Chipnet Faucet](https://tbch.googol.cash/)
+---
 
-### Installation
+## 🛠️ Local Development
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/flowguard.git
-   cd flowguard
-   ```
+### Running the Full Stack
 
-2. **Install dependencies**
-   ```bash
-   # Install all workspace dependencies
-   pnpm install
-   ```
+The easiest way to run everything:
 
-3. **Start the backend**
-   ```bash
-   cd backend
-   pnpm dev
-   ```
-   Backend will run at `http://localhost:3001`
+```bash
+# From root directory
+pnpm dev
+```
 
-4. **Start the frontend**
-   ```bash
-   cd frontend
-   pnpm dev
-   ```
-   Frontend will run at `http://localhost:5173`
+This runs both frontend and backend in parallel using pnpm workspaces.
 
-5. **Connect your wallet**
-   - Open `http://localhost:5173` in your browser
-   - Click "Connect Wallet" and select your BCH wallet extension
-   - Approve the connection
+### Running Components Separately
 
-6. **Create your first vault**
-   - Navigate to "Create Vault"
-   - Fill in vault details (name, deposit, unlock schedule, signers)
-   - Sign the transaction
-   - Your vault is now live on-chain!
+**Backend only:**
+```bash
+cd backend
+pnpm dev
+# Backend runs on http://localhost:3001
+```
+
+**Frontend only:**
+```bash
+cd frontend
+pnpm dev
+# Frontend runs on http://localhost:5173
+# Note: API calls will fail unless backend is running
+```
+
+### Available Scripts
+
+**Root level:**
+- `pnpm dev` - Start all services in development mode
+- `pnpm build` - Build all workspaces
+- `pnpm test` - Run all tests
+- `pnpm lint` - Lint all code
+
+**Backend:**
+- `pnpm dev` - Start development server with hot reload
+- `pnpm build` - Compile TypeScript to JavaScript
+- `pnpm start` - Run production build
+- `pnpm deploy:chipnet` - Deploy contract to chipnet
+
+**Frontend:**
+- `pnpm dev` - Start Vite dev server
+- `pnpm build` - Build for production
+- `pnpm preview` - Preview production build locally
+
+### Development Tips
+
+1. **Hot Reload**: Both frontend and backend support hot reload. Changes to code will automatically refresh.
+
+2. **Database**: The SQLite database is created automatically in `backend/database/flowguard.db` on first run.
+
+3. **API Proxy**: In development, the frontend Vite server proxies `/api/*` requests to `http://localhost:3001`. No CORS issues!
+
+4. **Blockchain Monitoring**: The backend automatically monitors the blockchain every 30 seconds and updates vault balances.
+
+5. **Cycle Scheduler**: The backend checks for cycle unlocks every 1 minute.
+
+---
 
 ## 📦 Deployment
 
-### Docker Deployment (Render)
+FlowGuard can be deployed in several ways:
 
-We recommend deploying to Render using Docker. It's the simplest way to get both frontend and backend running together.
+### Option 1: Docker Compose (Local/Server)
+
+Best for: Running on your own server or local machine
+
+```bash
+# Copy environment file
+cp env.example .env
+
+# Edit .env with your settings
+# Then start everything:
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+
+# Stop everything
+docker-compose down
+```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions.
+
+### Option 2: Render (Recommended for Beginners)
+
+Best for: Easy cloud deployment with minimal configuration
+
+Render can deploy both frontend and backend using Docker. It's the simplest option for beginners.
 
 **Quick Start:**
 1. Push your code to GitHub
@@ -153,75 +413,185 @@ We recommend deploying to Render using Docker. It's the simplest way to get both
 4. Connect your repository
 5. Render will detect `render.yaml` and deploy both services
 
-See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for the complete guide.
+See [RENDER_DEPLOYMENT.md](./RENDER_DEPLOYMENT.md) for the complete step-by-step guide.
 
-### Alternative: Split Deployment
+### Option 3: Split Deployment (Advanced)
 
-You can also deploy frontend and backend separately:
+Best for: Production deployments with separate scaling
 
-**Backend (fly.io):**
-```bash
-cd backend
-fly deploy
-```
+- **Frontend**: Deploy to Vercel (static site)
+- **Backend**: Deploy to Fly.io (Express server)
 
-**Frontend (Vercel):**
-```bash
-cd frontend
-vercel
-```
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for full instructions.
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment guide.
+---
 
 ## 🔧 Environment Variables
 
-### Backend (.env)
+### Backend Environment Variables
+
+Create `backend/.env`:
 
 ```bash
+# Server Configuration
 PORT=3001
-BCH_NETWORK=chipnet
-DATABASE_PATH=./data/flowguard.db
+NODE_ENV=development  # or 'production'
+
+# Database Configuration
+DATABASE_PATH=./database/flowguard.db
+
+# Bitcoin Cash Network
+BCH_NETWORK=chipnet  # Options: chipnet, mainnet, testnet3, testnet4
 ```
 
-### Frontend (.env)
+### Frontend Environment Variables
+
+Create `frontend/.env`:
 
 ```bash
-VITE_API_URL=http://localhost:3001/api  # Development
-# Production: https://flowguard-backend.fly.dev/api
+# Backend API URL
+# Development: Use proxy (leave empty or use http://localhost:3001/api)
+# Production: Use your deployed backend URL
+VITE_API_URL=http://localhost:3001/api
+
+# Bitcoin Cash Network
+VITE_BCH_NETWORK=chipnet
 ```
+
+> **Note**: Environment variables starting with `VITE_` are exposed to the browser. Never put secrets here!
+
+### Docker Environment Variables
+
+For Docker deployments, see `env.example` for all available variables.
+
+---
 
 ## 🧪 Technology Stack
 
 ### Frontend
 - **React 18** - UI framework
 - **TypeScript** - Type safety
-- **Vite** - Build tool
-- **TailwindCSS** - Styling
+- **Vite** - Build tool and dev server
+- **TailwindCSS** - Utility-first CSS framework
 - **React Router** - Client-side routing
 - **Lucide Icons** - Icon library
+- **Zustand** - State management
 
 ### Backend
-- **Node.js** - Runtime
+- **Node.js 18+** - Runtime environment
 - **Express.js** - Web framework
-- **SQLite** / **better-sqlite3** - Database
 - **TypeScript** - Type safety
+- **SQLite** / **better-sqlite3** - Database
+- **CashScript** - Smart contract language
+- **mainnet-js** - Bitcoin Cash library
 
 ### Smart Contracts
 - **CashScript** - Contract language
-- **FlowGuardDemo.cash** - Working multisig treasury (deployed on chipnet)
+- **FlowGuardEnhanced.cash** - Working multisig treasury (deployed on chipnet)
 - **Layla CHIPs** - Advanced contracts ready (loops.cash, FlowGuard.cash, bitwise.cash, functions.cash)
 
 ### Infrastructure
-- **fly.io** - Backend hosting
-- **Vercel** - Frontend hosting
 - **Docker** - Containerization
+- **Render** - Cloud hosting (recommended)
+- **Fly.io** - Alternative backend hosting
+- **Vercel** - Alternative frontend hosting
+
+---
+
+## 🐛 Troubleshooting
+
+### Backend won't start
+
+**Problem**: Backend fails to start or crashes immediately.
+
+**Solutions**:
+1. Check Node.js version: `node --version` (must be 18+)
+2. Check if port 3001 is already in use:
+   ```bash
+   lsof -i :3001
+   # If something is using it, kill it or change PORT in .env
+   ```
+3. Check database directory exists:
+   ```bash
+   mkdir -p backend/database
+   ```
+4. Check environment variables are set correctly
+5. Check logs for specific error messages
+
+### Frontend can't connect to backend
+
+**Problem**: Frontend shows errors when trying to call API.
+
+**Solutions**:
+1. Verify backend is running: Visit `http://localhost:3001/health`
+2. Check `VITE_API_URL` in `frontend/.env` (should be `http://localhost:3001/api`)
+3. Check Vite proxy configuration in `frontend/vite.config.ts`
+4. Check browser console for CORS errors (shouldn't happen in dev)
+5. Make sure both servers are running
+
+### Wallet connection issues
+
+**Problem**: Can't connect wallet or transactions fail.
+
+**Solutions**:
+1. Make sure wallet extension is installed and enabled
+2. Check wallet is connected to **Chipnet** (testnet), not mainnet
+3. Refresh the page and try connecting again
+4. Check browser console for wallet errors
+5. Make sure you have chipnet BCH (get from faucet)
+
+### Database errors
+
+**Problem**: Database-related errors in backend logs.
+
+**Solutions**:
+1. Check `DATABASE_PATH` in `backend/.env` is correct
+2. Make sure the database directory exists and is writable:
+   ```bash
+   mkdir -p backend/database
+   chmod 755 backend/database
+   ```
+3. Delete `backend/database/flowguard.db` to reset (⚠️ loses data)
+4. Check disk space: `df -h`
+
+### Build errors
+
+**Problem**: `pnpm build` or `pnpm install` fails.
+
+**Solutions**:
+1. Clear node_modules and reinstall:
+   ```bash
+   rm -rf node_modules */node_modules
+   pnpm install
+   ```
+2. Clear pnpm cache:
+   ```bash
+   pnpm store prune
+   ```
+3. Check Node.js and pnpm versions match requirements
+4. Check for TypeScript errors: `pnpm --filter backend build`
+
+### Docker issues
+
+**Problem**: Docker containers won't start or crash.
+
+**Solutions**:
+1. Check Docker is running: `docker ps`
+2. Check logs: `docker-compose logs`
+3. Rebuild images: `docker-compose build --no-cache`
+4. Check environment variables in `.env` file
+5. Check port conflicts (3001, 80)
+
+---
 
 ## 📖 Documentation
 
-- [**User Documentation**](./frontend/src/pages/DocsPage.tsx) - Guides for creating vaults, proposals, and managing treasuries
-- [**Render Deployment Guide**](./RENDER_DEPLOYMENT.md) - Deploy to Render using Docker (recommended)
-- [**Deployment Guide**](./DEPLOYMENT.md) - Alternative deployment options (Fly.io, Vercel)
-- [**Product Requirements**](./docs/PRD.md) - Product requirements and roadmap
+- [**Product Requirements Document**](./docs/PRD.md) - Product requirements and roadmap
+- [**Render Deployment Guide**](./RENDER_DEPLOYMENT.md) - Deploy to Render using Docker (recommended for beginners)
+- [**Deployment Guide**](./DEPLOYMENT.md) - Alternative deployment options (Docker, Fly.io, Vercel)
+- [**User Documentation**](./frontend/src/pages/DocsPage.tsx) - In-app user guides
+
+---
 
 ## 🤝 Use Cases
 
@@ -233,6 +603,8 @@ Automate bug bounty funds and development grants with maintainer approval requir
 
 ### Crypto Startups
 Handle payroll and operational expenses with board approval and spending caps.
+
+---
 
 ## 🔐 Security
 
@@ -250,6 +622,8 @@ All contract code is open source and auditable. No black boxes, no hidden logic.
 
 ⚠️ **Testnet Notice**: FlowGuard is currently deployed on Bitcoin Cash chipnet (testnet). Do not use real funds. Contracts have not been formally audited.
 
+---
+
 ## 🏆 Chipnet Track & Layla CHIPs
 
 We're participating in the Chipnet Track and have implemented all four Layla CHIPs:
@@ -258,8 +632,6 @@ We're participating in the Chipnet Track and have implemented all four Layla CHI
 All Layla CHIPs activate on:
 - **Chipnet**: November 15, 2025
 - **Mainnet**: May 15, 2026
-
-Source: [BCH Loops](https://github.com/bitjson/bch-loops), [BCH Bitwise](https://github.com/bitjson/bch-bitwise), [BCH P2S](https://github.com/bitjson/bch-p2s), [BCH Functions](https://github.com/bitjson/bch-functions)
 
 ### What's Live Right Now
 
@@ -298,6 +670,8 @@ We've written contracts that use all four Layla CHIPs. They're tested and ready,
 - Functions like `hasApproval()`, `isSigner()`, `isAllowedSpending()`
 
 Once the CHIPs activate, we'll deploy these and they'll make the system more efficient and powerful. But the current version works great for now.
+
+---
 
 ## 🛣️ Roadmap
 
@@ -348,15 +722,19 @@ We've written contracts that use all four Layla CHIPs (Loops, Bitwise, P2S, Func
 
 We're building this in the open, so if you have ideas or want to contribute, jump in! The roadmap is flexible and we're always open to feedback.
 
+---
+
 ## 🤝 Contributing
 
 We'd love your help! This is a community project and we're always looking for contributors.
 
 Here's how to get started:
 1. Fork the repo and clone it
-2. Create a branch for your changes
+2. Create a branch for your changes: `git checkout -b feature/your-feature-name`
 3. Make your changes (and test them!)
-4. Open a pull request with a clear description
+4. Commit your changes: `git commit -m "Add: your feature description"`
+5. Push to your fork: `git push origin feature/your-feature-name`
+6. Open a pull request with a clear description
 
 We're especially interested in:
 - Bug fixes and improvements
@@ -367,10 +745,13 @@ We're especially interested in:
 
 If you're not sure where to start, check the issues or just ask. We're friendly!
 
+---
 
 ## 📄 License
 
 MIT License - see [LICENSE](./LICENSE) file for details.
+
+---
 
 ## 🔗 Links
 
@@ -378,6 +759,8 @@ MIT License - see [LICENSE](./LICENSE) file for details.
 - **Documentation**: [/docs](https://flowguard.app/docs)
 - **GitHub**: [flowguard](https://github.com/yourusername/flowguard)
 - **Twitter**: [@FlowGuardBCH](https://twitter.com/FlowGuardBCH)
+
+---
 
 ## 🙏 Acknowledgments
 
