@@ -58,6 +58,16 @@ Built for Bitcoin Cash's advanced covenant technology:
 
 Before you begin, make sure you have the following installed:
 
+**For Docker Compose (Easiest Option):**
+1. **Docker** - [Download from docker.com](https://docs.docker.com/get-docker/)
+   ```bash
+   # Verify installation
+   docker --version
+   docker-compose --version
+   ```
+   If you have Docker, you can skip Node.js and pnpm - Docker handles everything!
+
+**For Development Mode (Options B & C):**
 1. **Node.js 18+** - [Download from nodejs.org](https://nodejs.org/)
    ```bash
    # Verify installation
@@ -73,6 +83,7 @@ Before you begin, make sure you have the following installed:
    pnpm --version  # Should show 8.0.0 or higher
    ```
 
+**Required for All Options:**
 3. **Git** - [Download from git-scm.com](https://git-scm.com/)
    ```bash
    # Verify installation
@@ -105,6 +116,8 @@ cd flowguard
 
 #### Step 2: Install Dependencies
 
+> **Skip this step if using Docker Compose** - Docker will handle dependencies automatically when building images.
+
 FlowGuard uses a monorepo structure with workspaces. Install all dependencies at once:
 
 ```bash
@@ -122,6 +135,24 @@ This command will:
 
 #### Step 3: Set Up Environment Variables
 
+**For Docker Compose (Option A):**
+Create a single `.env` file at the root of the project:
+
+```bash
+# From the root directory, copy the example file
+cp env.example .env
+
+# Edit .env with your preferred editor (or leave defaults for local development)
+# The defaults work fine for local testing:
+# - BACKEND_PORT=3001
+# - FRONTEND_PORT=80
+# - BCH_NETWORK=chipnet
+# - VITE_API_URL=http://localhost:3001/api
+```
+
+Docker Compose will automatically use this `.env` file for both services.
+
+**For Development Mode (Options B & C):**
 Create environment variable files for both backend and frontend:
 
 **Backend environment file** (`backend/.env`):
@@ -155,9 +186,64 @@ EOF
 
 #### Step 4: Start the Development Servers
 
-You have two options for running the app:
+You have three options for running the app:
 
-**Option A: Run Everything Together (Recommended)**
+**Option A: Docker Compose (Easiest - Recommended for Beginners)**
+
+This is the simplest way to run FlowGuard. Docker handles everything for you:
+
+```bash
+# Make sure Docker is installed and running
+# Check Docker: docker --version
+
+# Copy environment file (if not already done)
+cp env.example .env
+
+# Start all services with Docker Compose
+docker-compose up -d
+
+# View logs (optional)
+docker-compose logs -f
+
+# Stop services when done
+docker-compose down
+```
+
+This will:
+- Build Docker images for both frontend and backend
+- Start the backend on `http://localhost:3001`
+- Start the frontend on `http://localhost:80` (or `http://localhost`)
+- Create persistent storage for the database
+- Run everything in isolated containers
+
+**Access the app:**
+- Frontend: `http://localhost` or `http://localhost:80`
+- Backend: `http://localhost:3001`
+- Backend Health: `http://localhost:3001/health`
+
+**Useful Docker commands:**
+```bash
+# View running containers
+docker-compose ps
+
+# View logs
+docker-compose logs -f          # All services
+docker-compose logs -f backend   # Just backend
+docker-compose logs -f frontend  # Just frontend
+
+# Stop services
+docker-compose down
+
+# Stop and remove volumes (⚠️ deletes database)
+docker-compose down -v
+
+# Rebuild and restart (after code changes)
+docker-compose up -d --build
+```
+
+> **Note**: Docker Compose runs in production mode. For development with hot reload, use Option B or C below.
+
+**Option B: Run Everything Together (Development Mode)**
 
 From the root directory:
 ```bash
@@ -169,8 +255,9 @@ This will:
 - Start the backend on `http://localhost:3001`
 - Start the frontend on `http://localhost:5173`
 - Both servers will watch for file changes and auto-reload
+- Perfect for active development
 
-**Option B: Run Separately**
+**Option C: Run Separately**
 
 **Terminal 1 - Backend:**
 ```bash
@@ -184,8 +271,24 @@ cd frontend
 pnpm dev
 ```
 
+This gives you separate control over each service and separate log outputs.
+
 #### Step 5: Verify Everything is Working
 
+**If using Docker Compose (Option A):**
+1. **Check Backend Health**:
+   - Open your browser and visit: `http://localhost:3001/health`
+   - You should see: `{"status":"ok","service":"flowguard-backend","blockchain":"connected"}`
+
+2. **Check Frontend**:
+   - Open your browser and visit: `http://localhost` or `http://localhost:80`
+   - You should see the FlowGuard dashboard
+
+3. **Check API**:
+   - Visit: `http://localhost:3001/api`
+   - You should see: `{"message":"FlowGuard API","version":"0.1.0","network":"chipnet"}`
+
+**If using Development Mode (Options B & C):**
 1. **Check Backend Health**:
    - Open your browser and visit: `http://localhost:3001/health`
    - You should see: `{"status":"ok","service":"flowguard-backend","blockchain":"connected"}`
@@ -200,7 +303,9 @@ pnpm dev
 
 #### Step 6: Connect Your Wallet
 
-1. Open `http://localhost:5173` in your browser
+1. Open the frontend in your browser:
+   - **Docker Compose**: `http://localhost` or `http://localhost:80`
+   - **Development Mode**: `http://localhost:5173`
 2. Click the "Connect Wallet" button (usually in the top right)
 3. Select your BCH wallet extension (Paytaca or Badger)
 4. Approve the connection request
