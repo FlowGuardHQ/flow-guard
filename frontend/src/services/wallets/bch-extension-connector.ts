@@ -2,6 +2,19 @@
  * BCH Browser Extension Wallet Connector
  * Supports Badger, Paytaca, and other BCH browser extension wallets
  * Uses the standard window.bitcoincash API
+ * 
+ * Debug helper: In browser console, run:
+ *   window.debugBCHWallet = () => {
+ *     console.log('window.bitcoincash:', window.bitcoincash);
+ *     console.log('window.paytaca:', window.paytaca);
+ *     console.log('window.paytacaWallet:', window.paytacaWallet);
+ *     console.log('All wallet-related properties:', Object.keys(window).filter(k => 
+ *       k.toLowerCase().includes('paytaca') || 
+ *       k.toLowerCase().includes('bitcoincash') ||
+ *       k.toLowerCase().includes('wallet')
+ *     ));
+ *   };
+ *   window.debugBCHWallet();
  */
 
 import {
@@ -29,10 +42,14 @@ interface BCHWallet {
 }
 
 // Extend Window interface to include bitcoincash and paytaca
+// Paytaca may also inject as window.paytacaWallet or other variants
 declare global {
   interface Window {
     bitcoincash?: BCHWallet;
     paytaca?: BCHWallet;
+    paytacaWallet?: BCHWallet;
+    // Some wallets inject under different names
+    [key: string]: any;
   }
 }
 
@@ -44,27 +61,68 @@ export class BCHExtensionConnector implements IWalletConnector {
 
   /**
    * Check if BCH wallet extension is installed
-   * Waits up to 3 seconds for wallet to be injected
+   * Waits up to 5 seconds for wallet to be injected
+   * Checks multiple possible property names and validates wallet API
    */
   async isAvailable(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
 
+    // Helper to check if a wallet object is valid (has required methods)
+    const isValidWallet = (wallet: any): boolean => {
+      return (
+        wallet &&
+        typeof wallet === 'object' &&
+        typeof wallet.getAddress === 'function' &&
+        typeof wallet.send === 'function'
+      );
+    };
+
     // Check if wallet is already available
-    if (window.bitcoincash || window.paytaca) return true;
+    const checkExisting = () => {
+      if (window.bitcoincash && isValidWallet(window.bitcoincash)) return window.bitcoincash;
+      if (window.paytaca && isValidWallet(window.paytaca)) return window.paytaca;
+      if (window.paytacaWallet && isValidWallet(window.paytacaWallet)) return window.paytacaWallet;
+      
+      // Check for any property that might be a wallet (for debugging)
+      for (const key in window) {
+        if (key.toLowerCase().includes('paytaca') || key.toLowerCase().includes('bitcoincash')) {
+          const candidate = (window as any)[key];
+          if (isValidWallet(candidate)) {
+            console.log(`Found wallet under property: ${key}`);
+            return candidate;
+          }
+        }
+      }
+      return null;
+    };
+
+    const existing = checkExisting();
+    if (existing) {
+      console.log('Wallet already available:', existing);
+      return true;
+    }
 
     // Wait for wallet to be injected (Paytaca may inject asynchronously)
     return new Promise((resolve) => {
       let attempts = 0;
-      const maxAttempts = 30; // 3 seconds total (30 * 100ms)
+      const maxAttempts = 50; // 5 seconds total (50 * 100ms)
 
       const checkWallet = setInterval(() => {
         attempts++;
 
-        if (window.bitcoincash || window.paytaca) {
+        const wallet = checkExisting();
+        if (wallet) {
           clearInterval(checkWallet);
+          console.log('Wallet detected after', attempts * 100, 'ms');
           resolve(true);
         } else if (attempts >= maxAttempts) {
           clearInterval(checkWallet);
+          console.warn('Wallet not detected after', maxAttempts * 100, 'ms');
+          console.warn('Available window properties:', Object.keys(window).filter(k => 
+            k.toLowerCase().includes('paytaca') || 
+            k.toLowerCase().includes('bitcoincash') ||
+            k.toLowerCase().includes('wallet')
+          ));
           resolve(false);
         }
       }, 100);
@@ -101,17 +159,54 @@ export class BCHExtensionConnector implements IWalletConnector {
     // Check for wallet availability
     const walletAvailable = await this.isAvailable();
     if (!walletAvailable) {
+      // Provide detailed debugging information
+      const debugInfo = {
+        windowProperties: Object.keys(window).filter(k => 
+          k.toLowerCase().includes('paytaca') || 
+          k.toLowerCase().includes('bitcoincash') ||
+          k.toLowerCase().includes('wallet')
+        ),
+        hasBitcoincash: !!window.bitcoincash,
+        hasPaytaca: !!window.paytaca,
+        hasPaytacaWallet: !!window.paytacaWallet,
+      };
+      
+      console.error('Wallet detection failed. Debug info:', debugInfo);
+      
       throw new Error(
-        'BCH wallet extension not found. Please install Badger or Paytaca wallet from the Chrome Web Store.'
+        'BCH wallet extension not found. Please ensure:\n' +
+        '1. Paytaca or Badger wallet extension is installed and enabled\n' +
+        '2. The wallet is unlocked\n' +
+        '3. Refresh the page after installing/enabling the extension\n' +
+        '4. Check the browser console for more details'
       );
     }
 
     try {
       // Use whichever wallet is available (prefer bitcoincash standard API)
-      this.wallet = window.bitcoincash || window.paytaca || null;
+      // Check multiple possible property names
+      this.wallet = 
+        window.bitcoincash || 
+        window.paytaca || 
+        window.paytacaWallet ||
+        null;
+
+      // If still not found, search for any wallet-like object
+      if (!this.wallet) {
+        for (const key in window) {
+          if (key.toLowerCase().includes('paytaca') || key.toLowerCase().includes('bitcoincash')) {
+            const candidate = (window as any)[key];
+            if (candidate && typeof candidate.getAddress === 'function') {
+              console.log(`Using wallet from property: ${key}`);
+              this.wallet = candidate;
+              break;
+            }
+          }
+        }
+      }
 
       if (!this.wallet) {
-        throw new Error('Wallet not available');
+        throw new Error('Wallet not available after detection');
       }
 
       // Get address from the user's existing wallet
