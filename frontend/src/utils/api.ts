@@ -1,6 +1,6 @@
 // Use relative URL in dev to leverage Vite proxy, full URL in production
 const API_BASE_URL = import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+  (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
 
 export interface VaultsResponse {
   created: any[];
