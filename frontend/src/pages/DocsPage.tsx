@@ -541,7 +541,7 @@ export default function DocsPage() {
                     <h4 className="font-mono text-sm font-bold mb-2 text-[var(--color-text-primary)]">GET /api/vaults</h4>
                     <p className="text-[var(--color-text-secondary)] mb-2">Retrieve list of vaults, optionally filtered by creator address.</p>
                     <div className="bg-gray-900 text-gray-100 rounded p-4 text-sm overflow-x-auto">
-                      <code>curl https://flowguard-backend.fly.dev/api/vaults?creator=bitcoincash:...</code>
+                      <code>curl https://flowguard-production.up.railway.app/api/vaults?creator=bitcoincash:...</code>
                     </div>
                   </div>
                   <div>

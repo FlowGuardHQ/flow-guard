@@ -30,7 +30,7 @@ export default function VaultDetailPage() {
     try {
       setLoadingTransactions(true);
       const API_BASE_URL = import.meta.env.VITE_API_URL ||
-        (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+        (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
       const response = await fetch(`${API_BASE_URL}/vaults/${id}/transactions`);
       if (response.ok) {
         const data = await response.json();
@@ -83,7 +83,7 @@ export default function VaultDetailPage() {
       if (!id || !vault?.contractAddress) return;
       try {
         const API_BASE_URL = import.meta.env.VITE_API_URL ||
-          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+          (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
         const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
         if (response.ok) {
           const data = await response.json();
@@ -327,7 +327,7 @@ export default function VaultDetailPage() {
 
         // Reload eligible cycles
         const API_BASE_URL = import.meta.env.VITE_API_URL ||
-          (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+          (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
         const response = await fetch(`${API_BASE_URL}/vaults/${id}/cycles/eligible`);
         if (response.ok) {
           const data = await response.json();

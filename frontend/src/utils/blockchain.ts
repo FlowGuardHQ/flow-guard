@@ -154,7 +154,7 @@ export async function createProposalOnChain(
   metadata?: { vaultId?: string; proposalId?: string; amount?: number; toAddress?: string }
 ): Promise<string> {
   // Get the unsigned transaction from backend
-  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
   const response = await fetch(`${apiUrl}/proposals/${proposalId}/create-onchain`, {
     method: 'POST',
     headers: {
@@ -192,7 +192,7 @@ export async function approveProposalOnChain(
   metadata?: { vaultId?: string; proposalId?: string }
 ): Promise<string> {
   // Get the unsigned transaction from backend
-  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
   const response = await fetch(`${apiUrl}/proposals/${proposalId}/approve-onchain`, {
     method: 'POST',
     headers: {
@@ -228,7 +228,7 @@ export async function executePayoutOnChain(
   metadata?: { vaultId?: string; proposalId?: string; amount?: number; toAddress?: string }
 ): Promise<string> {
   // Get the unsigned transaction from backend
-  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
   const response = await fetch(`${apiUrl}/proposals/${proposalId}/execute-onchain`, {
     method: 'POST',
     headers: {
@@ -267,7 +267,7 @@ export async function unlockCycleOnChain(
   metadata?: { vaultId?: string; amount?: number }
 ): Promise<string> {
   // Get the unsigned transaction from backend
-  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flow-guard.fly.dev/api' : '/api');
+  const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://flowguard-production.up.railway.app/api' : '/api');
   const response = await fetch(`${apiUrl}/vaults/${vaultId}/unlock-onchain`, {
     method: 'POST',
     headers: {
