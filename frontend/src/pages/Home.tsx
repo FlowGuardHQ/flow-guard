@@ -25,7 +25,7 @@ export default function Home() {
           <div className="inline-flex items-center gap-2 px-4 py-2 mb-8 bg-[var(--color-surface)] rounded-full shadow-md border border-gray-200 dark:border-gray-700">
             <span className="w-2 h-2 bg-[#4b6e48] rounded-full animate-pulse"></span>
             <span className="text-sm font-medium text-[var(--color-text-secondary)]">
-              Powered by Layla CHIPs on Bitcoin Cash
+              Built on Bitcoin Cash
             </span>
           </div>
 
@@ -38,7 +38,7 @@ export default function Home() {
 
           {/* Supporting text */}
           <p className="text-xl md:text-2xl lg:text-3xl text-[var(--color-text-secondary)] mb-12 max-w-4xl mx-auto leading-relaxed">
-            Enable recurring budget releases, role-based approval, and spending guardrails — all enforced on-chain — without surrendering custody of your funds.
+            A shared wallet for your team. Set who can approve spending, when funds unlock, and how much can be spent. No banks, no middlemen, just BCH.
           </p>
 
           {/* CTA Buttons */}
@@ -90,9 +90,9 @@ export default function Home() {
               <div className="mb-6">
                 <Clock className="w-12 h-12 text-[#b2ac88]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Recurring Budgets</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Scheduled Unlocks</h3>
               <p className="text-[var(--color-text-secondary)]">
-                Automated periodic disbursements using on-chain Loops. Set up monthly, weekly, or custom unlock schedules that execute automatically.
+                Funds unlock on a schedule you set — weekly, monthly, whatever works. Perfect for payroll, grants, or contributor payments.
               </p>
             </Card>
 
@@ -100,9 +100,9 @@ export default function Home() {
               <div className="mb-6">
                 <Users className="w-12 h-12 text-[#4b6e48]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Multi-Signature Approval</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Team Approval</h3>
               <p className="text-[var(--color-text-secondary)]">
-                Role-based approval system with configurable thresholds. Define 2-of-3, 3-of-5, or any multisig pattern for maximum security.
+                Need 2 out of 3 people to approve a payment? Done. You decide how many signers are needed before money moves.
               </p>
             </Card>
 
@@ -110,9 +110,9 @@ export default function Home() {
               <div className="mb-6">
                 <Shield className="w-12 h-12 text-[#898989]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Spending Guardrails</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Spending Limits</h3>
               <p className="text-[var(--color-text-secondary)]">
-                On-chain rules to prevent misuse and enforce spending limits. Set caps per period, per recipient, or per proposal type.
+                Set maximum amounts per payment to prevent mistakes or abuse. The contract enforces your rules automatically.
               </p>
             </Card>
 
@@ -120,9 +120,9 @@ export default function Home() {
               <div className="mb-6">
                 <Eye className="w-12 h-12 text-[#b2ac88]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">On-Chain Transparency</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Full Transparency</h3>
               <p className="text-[var(--color-text-secondary)]">
-                All treasury operations visible and auditable on-chain. Complete transparency for stakeholders with immutable records.
+                Every payment, approval, and decision is recorded on the blockchain. Anyone can verify what happened and when.
               </p>
             </Card>
 
@@ -130,9 +130,9 @@ export default function Home() {
               <div className="mb-6">
                 <Lock className="w-12 h-12 text-[#4b6e48]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Non-Custodial Security</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">You Control the Keys</h3>
               <p className="text-[var(--color-text-secondary)]">
-                You maintain full custody of your funds. No third-party intermediaries, no centralized control, just pure on-chain enforcement.
+                No one else holds your funds. Not us, not a bank, not anyone. The vault is yours.
               </p>
             </Card>
 
@@ -140,9 +140,9 @@ export default function Home() {
               <div className="mb-6">
                 <Zap className="w-12 h-12 text-[#898989]" strokeWidth={1.5} />
               </div>
-              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">Powered by Layla CHIPs</h3>
+              <h3 className="font-bold text-xl mb-3 text-[var(--color-text-primary)]">BCH Native</h3>
               <p className="text-[var(--color-text-secondary)]">
-                Built on cutting-edge Bitcoin Cash covenants: Loops for automation, P2S for enforcement, Bitwise for efficiency, Functions for modularity.
+                Built with CashScript on Bitcoin Cash. Uses the 2026 upgrade features like loops and native introspection for efficient on-chain logic.
               </p>
             </Card>
           </div>
@@ -282,12 +282,12 @@ export default function Home() {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
               <h2 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 section-bold">
-                Powered by
+                Built for
                 <br />
-                Layla CHIPs
+                Bitcoin Cash
               </h2>
               <p className="text-xl mb-8 text-white/90">
-                FlowGuard leverages Bitcoin Cash's most advanced covenant technologies to create a secure, efficient, and fully on-chain treasury management system.
+                FlowGuard uses features from the BCH 2026 upgrade to create efficient on-chain treasury logic. Everything runs directly on the blockchain.
               </p>
               <div className="space-y-6">
                 <div className="flex items-start gap-4">

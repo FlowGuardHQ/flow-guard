@@ -66,10 +66,10 @@ export default function DocsPage() {
                 What is FlowGuard?
               </h3>
               <p className="text-[var(--color-text-secondary)] mb-6 text-lg leading-relaxed">
-                FlowGuard is an on-chain treasury management system built on Bitcoin Cash using Layla CHIPs.
-                It enables organizations to manage treasuries with recurring budget releases, role-based approval
-                workflows, and spending guardrails — all enforced by on-chain covenants without relying on
-                centralized backends or third-party custodians.
+                FlowGuard is an on-chain treasury management system built on Bitcoin Cash.
+                It enables organizations to manage treasuries with scheduled budget releases,
+                team-based approval workflows, and spending limits — all enforced by on-chain covenants
+                without relying on centralized backends or third-party custodians.
               </p>
 
               <div className="bg-[var(--color-surface-alt)] rounded-lg p-6 border border-gray-200 dark:border-gray-700">
@@ -115,7 +115,7 @@ export default function DocsPage() {
                   <div>
                     <div className="font-semibold text-[var(--color-text-primary)]">BCH Wallet</div>
                     <div className="text-[var(--color-text-secondary)]">
-                      Install Paytaca or Badger wallet extension. FlowGuard supports any wallet that
+                      Install the Paytaca wallet extension. FlowGuard supports any wallet that
                       implements the <code className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded">window.bitcoincash</code> or <code className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded">window.paytaca</code> API.
                     </div>
                   </div>
@@ -190,7 +190,7 @@ export default function DocsPage() {
                       </p>
                       <div className="bg-[var(--color-surface-alt)] rounded p-4 border border-gray-200 dark:border-gray-700">
                         <div className="text-sm text-[var(--color-text-secondary)]">
-                          <strong className="text-[var(--color-text-primary)]">Name:</strong> "Q1 2025 Development Budget"<br/>
+                          <strong className="text-[var(--color-text-primary)]">Name:</strong> "Q1 2025 Development Budget"<br />
                           <strong className="text-[var(--color-text-primary)]">Description:</strong> "Monthly development stipends for core contributors"
                         </div>
                       </div>
@@ -432,15 +432,15 @@ export default function DocsPage() {
               </Card>
 
               <Card padding="xl">
-                <h3 className="text-2xl font-semibold mb-6 text-[var(--color-text-primary)]">Layla CHIPs Technology</h3>
+                <h3 className="text-2xl font-semibold mb-6 text-[var(--color-text-primary)]">BCH 2026 Upgrade Features</h3>
                 <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
                   <p className="text-sm text-blue-800 dark:text-blue-200">
-                    📅 <strong>CHIP Activation Schedule:</strong> All Layla CHIPs activate on Chipnet November 15, 2025 and Mainnet May 15, 2026.
-                    FlowGuard currently runs FlowGuardDemo.cash (basic multisig) on chipnet, with advanced CHIP contracts ready to deploy on activation.
+                    📅 <strong>Upgrade Schedule:</strong> These features activate on Chipnet November 15, 2025 and Mainnet May 15, 2026.
+                    FlowGuard currently runs a basic multisig on chipnet, with advanced contracts ready to deploy on activation.
                   </p>
                 </div>
                 <p className="text-[var(--color-text-secondary)] mb-6 leading-relaxed">
-                  FlowGuard demonstrates mastery of all four Cash Improvement Proposals (CHIPs):
+                  FlowGuard uses features from the BCH 2026 upgrade:
                 </p>
                 <div className="space-y-6">
                   <div>
@@ -576,8 +576,7 @@ export default function DocsPage() {
                     </h3>
                     <p className="text-amber-800 dark:text-amber-200 leading-relaxed">
                       FlowGuard is currently deployed on Bitcoin Cash chipnet (testnet). Do not use
-                      real funds. While the underlying technology (Layla CHIPs) is production-ready,
-                      FlowGuard contracts have not been formally audited. Use at your own risk.
+                      real funds. The contracts have not been formally audited. Use at your own risk.
                     </p>
                   </div>
                 </div>
