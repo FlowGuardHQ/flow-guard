@@ -109,7 +109,7 @@ export function useWallet(): UseWalletReturn {
       if (!isAvailable) {
         throw new Error(
           walletType === WalletType.BCH_EXTENSION
-            ? 'BCH wallet extension not found. Please install Badger or Paytaca wallet.'
+            ? 'BCH wallet extension not found. Please install Paytaca wallet.'
             : 'mainnet.cash library not available'
         );
       }
