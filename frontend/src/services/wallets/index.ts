@@ -1,8 +1,8 @@
 /**
  * Wallet Services
- * Export all wallet connectors for easy imports
+ * Export legacy wallet connectors for backwards compatibility
+ * Note: MainnetConnector is now exported from ../connectors
  */
 
-export { MainnetConnector } from './mainnet-connector';
 export { PaytacaConnector } from './paytaca-connector';
 export { LegacyBCHExtensionConnector } from './legacy-bch-connector';
