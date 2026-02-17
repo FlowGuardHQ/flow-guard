@@ -54,7 +54,7 @@ export const AddSignerModal: React.FC<AddSignerModalProps> = ({
           <h2 className="text-2xl font-bold">Add Signer</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-textMuted hover:text-textSecondary transition-colors"
             aria-label="Close"
           >
             <svg
@@ -87,7 +87,7 @@ export const AddSignerModal: React.FC<AddSignerModalProps> = ({
               disabled={loading}
               required
             />
-            <p className="mt-2 text-xs text-gray-600">
+            <p className="mt-2 text-xs text-textSecondary">
               Enter the BCH address of the signer you want to add to this vault.
             </p>
           </div>

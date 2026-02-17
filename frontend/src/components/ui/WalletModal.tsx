@@ -1,11 +1,17 @@
 /**
  * Wallet Selection Modal
  * Allows users to choose between Paytaca, WalletConnect v2, and mainnet.cash
+ *
+ * DESIGN RULES:
+ * - Uses ONLY Sage palette colors (#F1F3E0, #D2DCB6, #A1BC98, #778873)
+ * - All colors via Tailwind classes from globals.css tokens
+ * - NO hardcoded hex values (#00E676, gray-*, red-*, etc.)
+ * - NO bg-white (use bg-surface)
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { WalletType } from '../../types/wallet';
-import { Wallet, X, ExternalLink, Smartphone, Coins, Download, Key, Loader2 } from 'lucide-react';
+import { Wallet, X, ExternalLink, Smartphone, Download, Key, Loader2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 interface WalletOption {
@@ -21,22 +27,28 @@ const walletOptions: WalletOption[] = [
   {
     type: WalletType.PAYTACA,
     name: 'Paytaca',
-    description: 'Connect your Paytaca browser extension',
+    description: 'Browser extension or mobile app',
     Icon: Wallet,
-    installUrl: 'https://chrome.google.com/webstore/detail/paytaca/pakphhpnneopheifihmjcjnbdbhaaiaa',
+    recommended: true,
+  },
+  {
+    type: WalletType.CASHONIZE,
+    name: 'Cashonize',
+    description: 'CashScript-aware mobile wallet (Covenant support)',
+    Icon: Smartphone,
     recommended: true,
   },
   {
     type: WalletType.WALLETCONNECT,
-    name: 'WalletConnect',
-    description: 'Cashonize, Zapit, or mobile wallets',
+    name: 'Zapit',
+    description: 'Other WalletConnect v2 wallets',
     Icon: Smartphone,
   },
   {
     type: WalletType.MAINNET,
-    name: 'mainnet.cash',
-    description: 'Use seed phrase wallet (for testing)',
-    Icon: Coins,
+    name: 'Testing Wallet',
+    description: 'Seed phrase wallet (dev/testing only)',
+    Icon: Key,
   },
 ];
 
@@ -59,23 +71,13 @@ export function WalletModal({
   const [showSeedInput, setShowSeedInput] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
-  const [paytacaAvailable, setPaytacaAvailable] = useState<boolean | null>(null);
-
-  // Check if Paytaca is available on mount
-  useEffect(() => {
-    if (isOpen) {
-      const checkPaytaca = async () => {
-        // Quick check for window.paytaca
-        const available = typeof window !== 'undefined' &&
-          !!window.paytaca &&
-          typeof window.paytaca.address === 'function';
-        setPaytacaAvailable(available ?? false);
-      };
-      checkPaytaca();
-    }
-  }, [isOpen]);
+  const [hideForWC, setHideForWC] = useState(false);
 
   if (!isOpen) return null;
+
+  // Hide our modal during WalletConnect to allow QR modal to show
+  const isWalletConnect = selectedWallet === WalletType.WALLETCONNECT;
+  const shouldHide = hideForWC && isWalletConnect && isConnecting;
 
   const handleConnect = async (walletType: WalletType) => {
     // For mainnet.cash, show seed phrase input option
@@ -85,28 +87,34 @@ export function WalletModal({
       return;
     }
 
-    // For WalletConnect, show coming soon message
-    if (walletType === WalletType.WALLETCONNECT) {
-      setLocalError('WalletConnect v2 support coming soon. Use Paytaca extension for now.');
-      return;
-    }
-
     setSelectedWallet(walletType);
     setLocalError(null);
 
+    // Hide our modal if WalletConnect (to show QR modal)
+    if (walletType === WalletType.WALLETCONNECT) {
+      setHideForWC(true);
+    }
+
     try {
       await onSelectWallet(walletType, seedPhrase || undefined);
-      // Wait for React to process the state update
-      await new Promise(resolve => {
-        requestAnimationFrame(() => {
-          setTimeout(resolve, 50);
-        });
-      });
-      onClose();
+
+      // Connection succeeded - close modal immediately
+      console.log('[WalletModal] Connection succeeded, closing modal...');
+
+      // Reset state first
       setShowSeedInput(false);
       setSeedPhrase('');
-    } catch (err) {
       setSelectedWallet(null);
+      setHideForWC(false);
+
+      // Close modal
+      onClose();
+    } catch (err: any) {
+      // Connection failed - show our modal again with error
+      console.log('[WalletModal] Connection failed:', err);
+      setHideForWC(false);
+      setSelectedWallet(null);
+      setLocalError(err.message || 'Connection failed. Please try again.');
     }
   };
 
@@ -133,38 +141,42 @@ export function WalletModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-white dark:bg-[#2d2d2d] rounded-2xl shadow-2xl max-w-md w-full my-auto">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-textPrimary/50 backdrop-blur-sm p-4 overflow-y-auto transition-opacity duration-200 ${
+        shouldHide ? 'opacity-0 pointer-events-none' : 'opacity-100'
+      }`}
+    >
+      <div className="bg-surface rounded-2xl shadow-lg max-w-md w-full my-auto border border-border">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-6 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#b2ac88]/10 rounded-lg">
-              <Wallet className="w-5 h-5 text-[#b2ac88]" />
+            <div className="p-2 bg-primarySoft rounded-lg">
+              <Wallet className="w-5 h-5 text-primary" />
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <h2 className="text-xl font-semibold text-textPrimary">
               Connect Wallet
             </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-surfaceAlt rounded-lg transition-colors"
             disabled={isConnecting}
           >
-            <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+            <X className="w-5 h-5 text-textSecondary" />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-6 space-y-4">
           {(error || localError) && (
-            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-sm text-red-800 dark:text-red-200">{error || localError}</p>
+            <div className="p-4 bg-primarySoft border border-primary rounded-lg">
+              <p className="text-sm text-primary font-medium">{error || localError}</p>
             </div>
           )}
 
           {!showSeedInput ? (
             <>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p className="text-sm text-textSecondary">
                 Choose a wallet to connect to FlowGuard
               </p>
 
@@ -173,58 +185,51 @@ export function WalletModal({
                 {walletOptions.map((wallet) => {
                   const WalletIcon = wallet.Icon;
                   const isPending = isConnecting && selectedWallet === wallet.type;
-                  const isPaytaca = wallet.type === WalletType.PAYTACA;
-                  const showInstallHint = isPaytaca && paytacaAvailable === false;
 
                   return (
                     <button
                       key={wallet.type}
                       onClick={() => handleConnect(wallet.type)}
                       disabled={isConnecting}
-                      className={`w-full p-4 border rounded-xl transition-all hover:border-[#b2ac88] hover:shadow-md group bg-white dark:bg-[#1a1a1a] ${isPending
-                        ? 'border-[#b2ac88] bg-[#b2ac88]/5 dark:bg-[#b2ac88]/10'
-                        : 'border-gray-200 dark:border-gray-700'
-                        } ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      className={`w-full p-4 border rounded-xl transition-all group bg-surface
+                        ${isPending ? 'border-primary bg-accentDim' : 'border-border'}
+                        ${!isConnecting && 'hover:border-primary hover:shadow-md'}
+                        ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                          <div className="p-3 bg-[#b2ac88]/10 dark:bg-[#b2ac88]/20 rounded-lg">
-                            <WalletIcon className="w-6 h-6 text-[#b2ac88] dark:text-[#b2ac88]" />
+                          <div className="p-3 bg-primarySoft rounded-lg">
+                            <WalletIcon className="w-6 h-6 text-primary" />
                           </div>
                           <div className="text-left">
                             <div className="flex items-center gap-2">
-                              <h3 className="font-semibold text-gray-900 dark:text-white group-hover:text-[#b2ac88] transition-colors">
+                              <h3 className="font-semibold text-textPrimary group-hover:text-primary transition-colors">
                                 {wallet.name}
                               </h3>
                               {wallet.recommended && (
-                                <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+                                <span className="px-2 py-0.5 text-xs bg-primarySoft text-primary rounded-full font-medium">
                                   Recommended
                                 </span>
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                            <p className="text-sm text-textSecondary">
                               {wallet.description}
                             </p>
-                            {showInstallHint && (
-                              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                                Extension not detected - install below
-                              </p>
-                            )}
                           </div>
                         </div>
 
                         {isPending ? (
-                          <Loader2 className="w-5 h-5 text-[#b2ac88] animate-spin" />
+                          <Loader2 className="w-5 h-5 text-primary animate-spin" />
                         ) : wallet.installUrl ? (
                           <a
                             href={wallet.installUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                            className="p-2 hover:bg-surfaceAlt rounded-lg transition-colors"
                             title="Install extension"
                           >
-                            <ExternalLink className="w-4 h-4 text-gray-400 dark:text-gray-500 hover:text-[#b2ac88] dark:hover:text-[#b2ac88]" />
+                            <ExternalLink className="w-4 h-4 text-textMuted hover:text-primary transition-colors" />
                           </a>
                         ) : null}
                       </div>
@@ -234,9 +239,9 @@ export function WalletModal({
               </div>
 
               {/* Info */}
-              <div className="mt-6 p-4 bg-gray-50 dark:bg-[#1a1a1a] rounded-lg border border-gray-200 dark:border-gray-800">
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  <strong className="text-gray-900 dark:text-white">Note:</strong> By connecting your wallet, you agree to FlowGuard's
+              <div className="mt-6 p-4 bg-surfaceAlt rounded-lg border border-border">
+                <p className="text-xs text-textSecondary">
+                  <strong className="text-textPrimary">Note:</strong> By connecting your wallet, you agree to FlowGuard's
                   terms. Your wallet remains in your custody at all times.
                 </p>
               </div>
@@ -246,16 +251,16 @@ export function WalletModal({
             <div className="space-y-4">
               <button
                 onClick={handleGoBack}
-                className="text-sm text-gray-600 dark:text-gray-400 hover:text-[#b2ac88] dark:hover:text-[#b2ac88] transition-colors flex items-center gap-1"
+                className="text-sm text-textSecondary hover:text-primary transition-colors flex items-center gap-1"
               >
                 ← Back to wallet options
               </button>
 
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                <h3 className="text-lg font-semibold text-textPrimary mb-2">
                   Import or Create Wallet
                 </h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                <p className="text-sm text-textSecondary mb-4">
                   Choose an option below to get started
                 </p>
               </div>
@@ -264,32 +269,32 @@ export function WalletModal({
               <button
                 onClick={() => handleConnect(WalletType.MAINNET)}
                 disabled={isConnecting}
-                className="w-full p-4 border border-gray-200 dark:border-gray-700 rounded-xl hover:border-[#b2ac88] hover:shadow-md transition-all bg-white dark:bg-[#1a1a1a] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full p-4 border border-border rounded-xl hover:border-primary hover:shadow-md transition-all bg-surface disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center gap-3">
-                  <div className="p-3 bg-[#b2ac88]/10 dark:bg-[#b2ac88]/20 rounded-lg">
-                    <Download className="w-5 h-5 text-[#b2ac88]" />
+                  <div className="p-3 bg-primarySoft rounded-lg">
+                    <Download className="w-5 h-5 text-primary" />
                   </div>
                   <div className="text-left">
-                    <h4 className="font-semibold text-gray-900 dark:text-white">
+                    <h4 className="font-semibold text-textPrimary">
                       Create New Wallet
                     </h4>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-sm text-textSecondary">
                       Generate a new wallet with a seed phrase
                     </p>
                   </div>
                 </div>
               </button>
 
-              <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+              <div className="text-center text-sm text-textMuted">
                 or
               </div>
 
               {/* Import Existing Wallet */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Key className="w-5 h-5 text-[#b2ac88]" />
-                  <label className="font-semibold text-gray-900 dark:text-white">
+                  <Key className="w-5 h-5 text-primary" />
+                  <label className="font-semibold text-textPrimary">
                     Import Existing Wallet
                   </label>
                 </div>
@@ -298,7 +303,7 @@ export function WalletModal({
                   value={seedPhrase}
                   onChange={(e) => setSeedPhrase(e.target.value)}
                   placeholder="Enter your 12-word seed phrase..."
-                  className="w-full p-3 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-[#1a1a1a] text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-[#b2ac88] focus:border-transparent resize-none"
+                  className="w-full p-3 border border-border rounded-lg bg-surface text-textPrimary placeholder-textMuted focus:ring-2 focus:ring-focusRing focus:border-primary resize-none transition-colors"
                   rows={3}
                   disabled={isConnecting}
                 />
@@ -306,15 +311,15 @@ export function WalletModal({
                 <button
                   onClick={handleImportSeed}
                   disabled={isConnecting || !seedPhrase.trim()}
-                  className="w-full px-4 py-3 bg-[#b2ac88] hover:bg-[#9d9771] text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full px-4 py-3 bg-primary hover:bg-primaryHover text-background font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isConnecting ? 'Importing...' : 'Import Wallet'}
                 </button>
               </div>
 
               {/* Security Notice */}
-              <div className="mt-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                <p className="text-xs text-yellow-800 dark:text-yellow-200">
+              <div className="mt-4 p-4 bg-accentDim border border-accent rounded-lg">
+                <p className="text-xs text-primary">
                   <strong>⚠️ Security Notice:</strong> Never share your seed phrase with anyone. FlowGuard will never ask for your seed phrase after initial import.
                 </p>
               </div>
