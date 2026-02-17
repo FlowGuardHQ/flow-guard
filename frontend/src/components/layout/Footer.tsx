@@ -1,182 +1,239 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
+import { Twitter, Mail, Send } from 'lucide-react';
 
-// Footer inspired by Safe.global - dark, spacious, multi-column layout with large wordmark
-// Footer fills more than half the screen height
-export const Footer: React.FC = () => {
+export function Footer() {
+  const currentYear = new Date().getFullYear();
+
   return (
-    <footer className="bg-black text-white relative overflow-hidden min-h-[60vh]">
-      {/* Large FLOW wordmark background graphic */}
-      <div className="absolute bottom-0 left-0 right-0 pointer-events-none">
-        <div className="text-[20rem] md:text-[30rem] lg:text-[40rem] font-bold text-white/5 select-none leading-none tracking-tighter">
-          FLOW
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 h-full flex flex-col">
-        {/* Social Icons and Copyright - Above footer links */}
-        <div className="flex items-center justify-between pb-16 pt-24 md:pt-32">
-          <div className="flex items-center space-x-6">
-            <a
-              href="https://twitter.com/flowguard"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-white hover:opacity-80 transition-opacity"
-              aria-label="X (Twitter)"
+    <footer className="bg-brand700 border-t border-brand300/20 pt-12 md:pt-16 pb-6 md:pb-8">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-12">
+        <div className="grid grid-cols-1 lg:grid-cols-6 gap-12 lg:gap-8 mb-16">
+          {/* Brand Block */}
+          <div className="lg:col-span-2 space-y-6">
+            <Link
+              to="/"
+              className="inline-block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 focus-visible:ring-offset-2 focus-visible:ring-offset-brand700 rounded-sm"
             >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-              </svg>
-            </a>
-            <a
-              href="https://github.com/Goodnessmbakara/flow-guard"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-white hover:opacity-80 transition-opacity"
-              aria-label="GitHub"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path
-                  fillRule="evenodd"
-                  d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </a>
+              <img
+                src="/assets/flow-green.png"
+                alt="FlowGuard"
+                className="h-8 object-contain"
+              />
+            </Link>
+            <p className="text-brand100 text-lg leading-relaxed max-w-sm">
+              Automate treasury payments that run on schedule.
+            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-brand100/70">
+                You control the funds.
+              </p>
+              <p className="text-sm text-brand100/70">
+                Rules locked into the blockchain.
+              </p>
+            </div>
+            <div className="inline-flex items-center px-3 py-1 rounded-full bg-brand300/20 border border-brand300/30">
+              <span className="w-1.5 h-1.5 rounded-full bg-brand300 mr-2 animate-pulse"></span>
+              <span className="text-xs font-mono font-medium text-brand100 uppercase tracking-wider">
+                Chipnet Alpha
+              </span>
+            </div>
           </div>
-          <p className="text-sm text-gray-400">
-            © {new Date().getFullYear()} FlowGuard. All rights reserved.
+
+          {/* Navigation Groups */}
+          <div className="lg:col-span-4 grid grid-cols-2 md:grid-cols-5 gap-8">
+            {/* Solutions */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">Solutions</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/vesting" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Vesting
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/payroll" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Payroll
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/budgeting" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Budgeting
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/grants" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Grants
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/governance-info" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Governance
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Product */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">Product</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/vaults" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Launch App
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/docs" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Documentation
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/explorer" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Explorer
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/updates" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Updates
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/indexer" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Indexer
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Developers */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">Developers</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/sdk" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    SDK
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/api" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    API Reference
+                  </Link>
+                </li>
+                <li>
+                  <a href="https://github.com/winsznx/flow-guard" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    GitHub
+                  </a>
+                </li>
+                <li>
+                  <Link to="/security" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Security
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* System */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">System</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/status" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Status
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/changelog" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Changelog
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/roadmap" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Roadmap
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/audits" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Audit Reports
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div className="space-y-4">
+              <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">Legal</h4>
+              <ul className="space-y-3">
+                <li>
+                  <Link to="/terms" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Terms
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/privacy" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Privacy
+                  </Link>
+                </li>
+                <li>
+                  <Link to="/disclaimer" className="text-brand100 hover:text-brand50 transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                    Disclaimer
+                  </Link>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Bar */}
+        <div className="pt-8 border-t border-brand300/20 flex flex-col md:flex-row justify-between items-center gap-4">
+          <p className="text-sm text-brand100/60">
+            &copy; {currentYear} FlowGuard Labs. All rights reserved.
           </p>
-        </div>
-
-        {/* Footer Links - 5 Column Layout */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-12 md:gap-16 lg:gap-20 pb-24 md:pb-32 lg:pb-40 flex-grow">
-          {/* Column 1: Product */}
-          <div>
-            <ul className="space-y-5 md:space-y-6">
-              <li>
-                <Link to="/vaults" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Vaults
-                </Link>
-              </li>
-              <li>
-                <Link to="/proposals" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Proposals
-                </Link>
-              </li>
-              <li>
-                <Link to="/docs" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Developer APIs
-                </Link>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Integrations
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 2: Users */}
-          <div>
-            <ul className="space-y-5 md:space-y-6">
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Teams
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Power Users
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Deploy new networks
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 3: Company */}
-          <div>
-            <ul className="space-y-5 md:space-y-6">
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  About
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Careers
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Blog
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Imprint
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 4: Support */}
-          <div>
-            <ul className="space-y-5 md:space-y-6">
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  FAQs
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Help centre
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Terms
-                </a>
-              </li>
-              <li>
-                <a href="#" className="text-white hover:opacity-80 transition-opacity text-base md:text-lg">
-                  Privacy
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 5: Social (duplicate for consistency with Safe.global layout) */}
-          <div>
-            <ul className="space-y-5 md:space-y-6">
-              <li>
-                <a
-                  href="https://twitter.com/flowguard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-white hover:opacity-80 transition-opacity text-base md:text-lg"
-                >
-                  X (Twitter)
-                </a>
-              </li>
-              <li>
-                <a
-                  href="https://github.com/Goodnessmbakara/flow-guard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-white hover:opacity-80 transition-opacity text-base md:text-lg"
-                >
-                  Github
-                </a>
-              </li>
-            </ul>
+          <div className="flex items-center gap-6">
+            <a
+              href="https://x.com/flowguard_"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="X (Twitter)"
+              className="text-brand100 hover:text-brand50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm p-1"
+            >
+              <Twitter className="w-5 h-5" />
+            </a>
+            <a
+              href="https://warpcast.com/flowguard"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Warpcast"
+              className="text-brand100 hover:text-brand50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm p-1"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 1000 1000" fill="currentColor">
+                <path d="M257.778 155.556H742.222V844.445H671.111V528.889H670.414C662.554 441.677 589.258 373.333 500 373.333C410.742 373.333 337.446 441.677 329.586 528.889H328.889V844.445H257.778V155.556Z" />
+                <path d="M128.889 253.333L157.778 351.111H182.222V746.667C169.949 746.667 160 756.616 160 768.889V795.556H155.556C143.283 795.556 133.333 805.505 133.333 817.778V844.445H382.222V817.778C382.222 805.505 372.273 795.556 360 795.556H355.556V768.889C355.556 756.616 345.606 746.667 333.333 746.667H306.667V253.333H128.889Z" />
+                <path d="M675.556 746.667C663.283 746.667 653.333 756.616 653.333 768.889V795.556H648.889C636.616 795.556 626.667 805.505 626.667 817.778V844.445H875.556V817.778C875.556 805.505 865.606 795.556 853.333 795.556H848.889V768.889C848.889 756.616 838.94 746.667 826.667 746.667V351.111H851.111L880 253.333H702.222V746.667H675.556Z" />
+              </svg>
+            </a>
+            <a
+              href="https://t.me/flowguard_cash"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Telegram"
+              className="text-brand100 hover:text-brand50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm p-1"
+            >
+              <Send className="w-5 h-5" />
+            </a>
+            <a
+              href="https://www.linkedin.com/company/flowguard-labs/"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="LinkedIn"
+              className="text-brand100 hover:text-brand50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm p-1"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+              </svg>
+            </a>
           </div>
         </div>
       </div>
     </footer>
   );
-};
+}
