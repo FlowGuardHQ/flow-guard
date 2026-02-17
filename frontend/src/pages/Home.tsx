@@ -630,7 +630,7 @@ export default function Home() {
                 Engineered for Layla CHIPs
               </h2>
               <p className="text-lg text-textSecondary mb-8 leading-relaxed">
-                FlowGuard uses modular covenants for efficient state encoding and deterministic execution.
+                FlowGuard uses modular covenants for efficient state encoding and predictable execution.
                 Post-May 2026, Loops, Functions, and Bitwise CHIPs enable trustless vote tallying and arbitrary M-of-N.
               </p>
               <div className="space-y-3 font-mono text-sm text-textMuted">
@@ -731,7 +731,7 @@ export default function Home() {
               Ready to enforce your treasury on-chain?
             </h2>
             <p className="text-xl mb-10 text-textSecondary leading-relaxed max-w-2xl mx-auto">
-              Deploy your first non-custodial treasury with deterministic budget automation
+              Deploy your first non-custodial treasury with predictable budget automation
             </p>
             <Link to="/vaults">
               <motion.button
