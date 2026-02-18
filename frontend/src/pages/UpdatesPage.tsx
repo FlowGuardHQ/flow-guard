@@ -18,6 +18,17 @@ interface BlogPost {
 
 const BLOG_POSTS: BlogPost[] = [
     {
+        slug: 'what-flowguard-is',
+        title: 'What FlowGuard Actually Is (And What It Isn’t)',
+        date: '2026-02-18',
+        summary: "FlowGuard isn't a wallet or a database. It's a set of six core covenant modules that enforce treasury rules directly on the Bitcoin Cash blockchain.",
+        tags: ['Product', 'Deep Dive', 'Technology'],
+        readingTime: 6,
+        featured: true,
+        status: 'published',
+        author: 'FlowGuard Team'
+    },
+    {
         slug: 'bch-treasury-problem',
         title: 'The Problem With How BCH Teams Manage Treasury Today',
         date: '2026-02-17',

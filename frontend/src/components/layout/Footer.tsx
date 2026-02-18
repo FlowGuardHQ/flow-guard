@@ -202,7 +202,7 @@ export function Footer() {
               href="https://warpcast.com/flowguard"
               target="_blank"
               rel="noopener noreferrer"
-              aria-label="Warpcast"
+              aria-label="Farcaster"
               className="text-brand100 hover:text-brand50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm p-1"
             >
               <svg className="w-5 h-5" viewBox="0 0 1000 1000" fill="currentColor">
