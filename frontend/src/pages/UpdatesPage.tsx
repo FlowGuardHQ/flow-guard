@@ -167,11 +167,11 @@ export default function UpdatesPage() {
                     <Link to={`/updates/${featuredPost.slug}`} className="block mb-16 group">
                         <div className="bg-surface border border-border rounded-2xl overflow-hidden hover:border-primary/50 transition-all">
                             {featuredPost.cover && (
-                                <div className="w-full h-64 md:h-80 overflow-hidden">
+                                <div className="w-full overflow-hidden rounded-t-2xl">
                                     <img
                                         src={featuredPost.cover}
                                         alt={featuredPost.title}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        className="w-full h-auto"
                                     />
                                 </div>
                             )}
@@ -215,11 +215,11 @@ export default function UpdatesPage() {
                             className="group bg-surface border border-border rounded-xl overflow-hidden hover:border-primary/50 transition-all"
                         >
                             {post.cover && (
-                                <div className="w-full h-48 overflow-hidden">
+                                <div className="w-full overflow-hidden rounded-t-xl">
                                     <img
                                         src={post.cover}
                                         alt={post.title}
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                        className="w-full h-auto"
                                     />
                                 </div>
                             )}

@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { Calendar, Clock, ArrowLeft, Twitter, MessageCircle, Send, MessageSquare } from 'lucide-react';
 import { Footer } from '../components/layout/Footer';
 
@@ -748,14 +749,29 @@ export default function UpdateDetailPage() {
 
     return (
         <main className="bg-background min-h-screen">
+            <Helmet>
+                <title>{post.title} | FlowGuard</title>
+                <meta name="description" content={post.summary} />
+                <meta property="og:type" content="article" />
+                <meta property="og:site_name" content="FlowGuard" />
+                <meta property="og:url" content={`https://flowguard.cash/updates/${post.slug}`} />
+                <meta property="og:title" content={`${post.title} | FlowGuard`} />
+                <meta property="og:description" content={post.summary} />
+                {post.cover && <meta property="og:image" content={`https://flowguard.cash${post.cover}`} />}
+                <meta name="twitter:card" content="summary_large_image" />
+                <meta name="twitter:site" content="@flowguard_" />
+                <meta name="twitter:title" content={post.title} />
+                <meta name="twitter:description" content={post.summary} />
+                {post.cover && <meta name="twitter:image" content={`https://flowguard.cash${post.cover}`} />}
+            </Helmet>
             {/* Header */}
             <div className="bg-surface border-b border-border">
                 {post.cover && (
-                    <div className="w-full h-72 overflow-hidden">
+                    <div className="w-full overflow-hidden">
                         <img
                             src={post.cover}
                             alt={post.title}
-                            className="w-full h-full object-cover object-center"
+                            className="w-full h-auto"
                         />
                     </div>
                 )}
