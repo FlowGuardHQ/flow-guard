@@ -751,11 +751,11 @@ export default function UpdateDetailPage() {
             {/* Header */}
             <div className="bg-surface border-b border-border">
                 {post.cover && (
-                    <div className="w-full max-h-96 overflow-hidden">
+                    <div className="w-full h-72 overflow-hidden">
                         <img
                             src={post.cover}
                             alt={post.title}
-                            className="w-full h-full object-cover"
+                            className="w-full h-full object-cover object-center"
                         />
                     </div>
                 )}
