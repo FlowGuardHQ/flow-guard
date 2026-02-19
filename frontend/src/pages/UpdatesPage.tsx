@@ -105,13 +105,7 @@ export default function UpdatesPage() {
             {/* Hero */}
             <section className="pt-32 pb-16 px-6 lg:px-12 bg-surface border-b border-border">
                 <div className="max-w-4xl mx-auto">
-                    <Link
-                        to="/"
-                        className="inline-flex items-center gap-2 text-textSecondary hover:text-textPrimary transition-colors mb-8"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Back to Home
-                    </Link>
+
                     <div className="text-center">
                         <h1 className="font-display text-5xl md:text-6xl font-bold text-textPrimary mb-6">
                             Updates
