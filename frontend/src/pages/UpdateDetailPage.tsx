@@ -16,6 +16,210 @@ interface BlogPost {
 }
 
 const BLOG_POSTS: Record<string, BlogPost> = {
+    'how-flowguard-vaults-enforce-spending-rules': {
+        slug: 'how-flowguard-vaults-enforce-spending-rules',
+        title: 'How FlowGuard Vaults Enforce Spending Rules On-Chain',
+        date: '2026-02-20',
+        summary: 'FlowGuard vaults extend multisig with policy enforcement — directly on Bitcoin Cash. Learn how approval thresholds, cycle-based unlocking, and spending caps work on-chain.',
+        tags: ['Education', 'Vaults', 'Architecture', 'BCH'],
+        readingTime: 6,
+        author: 'FlowGuard Team',
+        cover: '/updates/FlowGuard Blog Banner.png',
+        content: `
+# How FlowGuard Vaults Enforce Spending Rules On-Chain
+
+## Introduction
+
+Multisig is often treated as the final answer to treasury control.
+
+Require 2-of-3 signatures.
+Or 3-of-5.
+Or 4-of-7.
+
+But multisig only answers one question:
+
+**How many people must approve a transaction?**
+
+It does not answer:
+
+- How much can be spent this month?
+- When does the next allocation unlock?
+- Can funds be sent to any address?
+- What happens if spending exceeds a planned budget?
+
+FlowGuard vaults extend multisig with policy enforcement — directly on Bitcoin Cash.
+
+## What a Vault Actually Stores
+
+When a FlowGuard vault is deployed, it encodes several parameters inside the contract:
+
+- Required approval threshold (M-of-N)
+- Signer public key hashes
+- Cycle duration (in seconds)
+- Per-cycle spending cap
+- Unlock amount per cycle
+- Optional recipient allowlist
+
+These values are part of the covenant constructor.
+
+They are not editable through a dashboard toggle.
+
+They are part of the contract's rules.
+
+## Layer 1: Approval Threshold
+
+The first enforcement layer is familiar:
+
+The contract checks that the required number of valid signatures is present.
+
+If the threshold is not met, the transaction is invalid.
+
+But FlowGuard does not stop there.
+
+## Layer 2: Cycle-Based Unlocking
+
+Vaults operate in cycles.
+
+**Example:**
+- Cycle duration: 30 days
+- Unlock amount per cycle: 5 BCH
+
+Even if the vault holds 100 BCH, only 5 BCH may become spendable in a given cycle.
+
+The contract verifies:
+
+- Has the cycle unlocked?
+- Has the unlock amount already been consumed?
+- Is this payout within the current cycle allocation?
+
+If a payout exceeds the cycle's available allocation, the transaction fails.
+
+This prevents:
+
+- Overspending in a single month
+- Draining treasury early
+- Violating agreed budget pacing
+
+## Layer 3: Spending Cap Enforcement
+
+A vault can define a per-transaction spending cap.
+
+For example:
+
+- Maximum payout per proposal: 1 BCH
+
+Even if:
+
+- The vault has sufficient balance
+- The cycle is unlocked
+- All signers approve
+
+The contract will reject any payout exceeding that cap.
+
+This prevents single large withdrawals from bypassing governance intent.
+
+## Layer 4: Recipient Restrictions (Optional)
+
+Vaults can include recipient allowlists.
+
+This means funds can only be sent to:
+
+- Pre-approved addresses
+- Contract-linked destinations
+- Specific grant recipients
+
+If a transaction attempts to send funds outside the allowed set, it fails at validation.
+
+This is useful for:
+
+- Structured grant disbursement
+- Dedicated contributor payments
+- Locked ecosystem allocations
+
+## Why This Is Different From "Good Discipline"
+
+Without on-chain enforcement, spending rules rely on:
+
+- Memory
+- Social pressure
+- Internal agreement
+
+With covenant enforcement, rules are validated by consensus.
+
+It is not about trusting signers to behave correctly.
+
+It is about removing the ability to violate policy.
+
+## Example Scenario
+
+Imagine a vault with:
+
+- 3 signers
+- 2-of-3 threshold
+- 30-day cycles
+- 10 BCH unlock per cycle
+- 2 BCH per-transaction cap
+
+In a given cycle:
+
+- Only 10 BCH can move total.
+- No single payout can exceed 2 BCH.
+- At least 2 signers must approve.
+
+Even if all 3 signers agree to move 15 BCH in one transaction, the contract will reject it.
+
+The rules are not advisory.
+
+They are enforced.
+
+## Why This Matters for Growing Treasuries
+
+As BCH projects scale:
+
+- Treasury size increases
+- Contributor count grows
+- Grants become more structured
+- Risk tolerance decreases
+
+Manual treasury management becomes fragile.
+
+Vault logic turns treasury governance into predictable infrastructure.
+
+Not opinion.
+Not memory.
+Code.
+
+## Multisig vs Programmable Treasury
+
+**Multisig:**
+- Enforces signature count.
+
+**Programmable treasury:**
+- Enforces signature count
+- Enforces timing
+- Enforces pacing
+- Enforces caps
+- Enforces policy
+
+FlowGuard vaults are programmable treasuries built using BCH covenant capabilities.
+
+## Closing
+
+Treasury security is not just about who signs.
+
+It's about what is allowed.
+
+FlowGuard vaults encode treasury rules directly into contract logic on Bitcoin Cash.
+
+Signers approve.
+The contract verifies.
+The blockchain enforces.
+
+In the next post, we'll go deeper into how streams use NFT commitments to track vesting state over time.
+
+If you manage capital on BCH, understanding this difference is essential.
+`
+    },
     'why-flowguard-is-non-custodial': {
         slug: 'why-flowguard-is-non-custodial',
         title: 'Why FlowGuard Is Non-Custodial (And Why That Matters)',

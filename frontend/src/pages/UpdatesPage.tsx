@@ -18,6 +18,18 @@ interface BlogPost {
 
 const BLOG_POSTS: BlogPost[] = [
     {
+        slug: 'how-flowguard-vaults-enforce-spending-rules',
+        title: 'How FlowGuard Vaults Enforce Spending Rules On-Chain',
+        date: '2026-02-20',
+        summary: 'FlowGuard vaults extend multisig with policy enforcement — directly on Bitcoin Cash. Learn how approval thresholds, cycle-based unlocking, and spending caps work on-chain.',
+        tags: ['Education', 'Vaults', 'Architecture', 'BCH'],
+        readingTime: 6,
+        featured: true,
+        status: 'published',
+        author: 'FlowGuard Team',
+        cover: '/updates/FlowGuard Blog Banner.png'
+    },
+    {
         slug: 'why-flowguard-is-non-custodial',
         title: 'Why FlowGuard Is Non-Custodial (And Why That Matters)',
         date: '2026-02-19',
