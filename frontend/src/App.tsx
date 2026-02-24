@@ -15,7 +15,7 @@ import RequestDetailPage from './pages/RequestDetailPage';
 import BudgetPlansPage from './pages/BudgetPlansPage';
 import CreateBudgetPlanPage from './pages/CreateBudgetPlanPage';
 import GovernancePage from './pages/GovernancePage';
-import DocsPage from './pages/DocsPage';
+
 import StreamsPage from './pages/StreamsPage';
 import StreamDetailPage from './pages/StreamDetailPage';
 import CreateStreamPage from './pages/CreateStreamPage';
@@ -26,6 +26,7 @@ import PaymentDetailPage from './pages/PaymentDetailPage';
 import AirdropsPage from './pages/AirdropsPage';
 import CreateAirdropPage from './pages/CreateAirdropPage';
 import AirdropDetailPage from './pages/AirdropDetailPage';
+import ClaimLinkPage from './pages/ClaimLinkPage';
 import ExplorerPage from './pages/ExplorerPage';
 import IndexerStatusPage from './pages/IndexerStatusPage';
 import VestingPage from './pages/solutions/VestingPage';
@@ -33,7 +34,7 @@ import PayrollPage from './pages/solutions/PayrollPage';
 import BudgetingPage from './pages/solutions/BudgetingPage';
 import GrantsPage from './pages/solutions/GrantsPage';
 import GovernanceInfoPage from './pages/solutions/GovernanceInfoPage';
-import SecurityPage from './pages/SecurityPage';
+
 import UpdatesPage from './pages/UpdatesPage';
 import UpdateDetailPage from './pages/UpdateDetailPage';
 import ChangelogPage from './pages/ChangelogPage';
@@ -66,8 +67,6 @@ function App() {
           <Route path="/grants" element={<GrantsPage />} />
           <Route path="/governance-info" element={<GovernanceInfoPage />} />
 
-          {/* Security page (public) */}
-          <Route path="/security" element={<SecurityPage />} />
 
           {/* Updates/Blog (public) */}
           <Route path="/updates" element={<UpdatesPage />} />
@@ -187,7 +186,7 @@ function App() {
                 </DashboardLayout>
               </ProtectedRoute>
             }
-          />
+          />o
           <Route
             path="/airdrops/:id"
             element={
@@ -198,6 +197,9 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Public Explorer (no auth required) */}
+          <Route path="/claim/:token" element={<ClaimLinkPage />} />
 
           {/* Public Explorer (no auth required) */}
           <Route
@@ -304,16 +306,18 @@ function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* Docs page with dashboard layout */}
           <Route
-            path="/docs"
+            path="/governance/create"
             element={
-              <DashboardLayout>
-                <DocsPage />
-              </DashboardLayout>
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <GovernancePage />
+                </DashboardLayout>
+              </ProtectedRoute>
             }
           />
+
+
         </Routes>
       </main>
 
@@ -331,4 +335,3 @@ function App() {
 }
 
 export default App;
-

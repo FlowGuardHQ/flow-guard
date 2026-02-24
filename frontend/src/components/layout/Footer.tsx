@@ -83,9 +83,9 @@ export function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link to="/docs" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                  <a href="https://docs.flowguard.cash" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
                     Documentation
-                  </Link>
+                  </a>
                 </li>
                 <li>
                   <Link to="/explorer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
@@ -98,9 +98,9 @@ export function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link to="/indexer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                  <a href="https://docs.flowguard.cash/api/indexer" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
                     Indexer
-                  </Link>
+                  </a>
                 </li>
               </ul>
             </div>
@@ -110,14 +110,14 @@ export function Footer() {
               <h4 className="text-sm font-semibold text-brand50 uppercase tracking-wider">Developers</h4>
               <ul className="space-y-3">
                 <li>
-                  <Link to="/sdk" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                  <a href="https://docs.flowguard.cash/reference/shared-types" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
                     SDK
-                  </Link>
+                  </a>
                 </li>
                 <li>
-                  <Link to="/api" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                  <a href="https://docs.flowguard.cash/api/overview" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
                     API Reference
-                  </Link>
+                  </a>
                 </li>
                 <li>
                   <a href="https://github.com/winsznx/flow-guard" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
@@ -152,9 +152,9 @@ export function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link to="/audits" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
+                  <a href="https://docs.flowguard.cash/security" target="_blank" rel="noopener noreferrer" className="text-brand100 hover:text-white transition-colors text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand300 rounded-sm">
                     Audit Reports
-                  </Link>
+                  </a>
                 </li>
               </ul>
             </div>

@@ -32,7 +32,7 @@ export interface Transaction {
  * Compatible with Paytaca/WC2 signTransaction API
  */
 export interface CashScriptSignOptions {
-  transaction: string; // hex-encoded transaction or libauth TransactionBCH
+  transaction: string | Record<string, unknown>; // hex-encoded transaction or libauth TransactionBCH
   sourceOutputs: SourceOutput[];
   broadcast?: boolean; // default true
   userPrompt?: string;
@@ -177,7 +177,7 @@ export interface PaytacaWalletAPI {
 
   /** Sign a CashScript transaction */
   signTransaction(options: {
-    transaction: string;
+    transaction: string | Record<string, unknown>;
     sourceOutputs: SourceOutput[];
     broadcast?: boolean;
     userPrompt?: string;

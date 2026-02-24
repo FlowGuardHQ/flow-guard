@@ -38,28 +38,26 @@ export const Header: React.FC = () => {
           <nav className="hidden md:flex items-center gap-8">
             <Link
               to="/vaults"
-              className={`text-xs uppercase tracking-widest font-medium transition-colors ${
-                isActive('/vaults') ? 'text-primary' : 'text-textSecondary hover:text-primary'
-              }`}
+              className={`text-xs uppercase tracking-widest font-medium transition-colors ${isActive('/vaults') ? 'text-primary' : 'text-textSecondary hover:text-primary'
+                }`}
             >
               Vaults
             </Link>
             <Link
               to="/proposals"
-              className={`text-xs uppercase tracking-widest font-medium transition-colors ${
-                isActive('/proposals') ? 'text-primary' : 'text-textSecondary hover:text-primary'
-              }`}
+              className={`text-xs uppercase tracking-widest font-medium transition-colors ${isActive('/proposals') ? 'text-primary' : 'text-textSecondary hover:text-primary'
+                }`}
             >
               Proposals
             </Link>
-            <Link
-              to="/docs"
-              className={`text-xs uppercase tracking-widest font-medium transition-colors ${
-                isActive('/docs') ? 'text-primary' : 'text-textSecondary hover:text-primary'
-              }`}
+            <a
+              href="https://docs.flowguard.cash"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs uppercase tracking-widest font-medium text-textSecondary hover:text-primary transition-colors"
             >
               Docs
-            </Link>
+            </a>
           </nav>
 
           {/* Right side - Wallet & Actions */}
@@ -133,13 +131,15 @@ export const Header: React.FC = () => {
             >
               Proposals
             </Link>
-            <Link
-              to="/docs"
+            <a
+              href="https://docs.flowguard.cash"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-xs uppercase tracking-widest font-medium text-textSecondary hover:text-primary transition-colors py-2"
               onClick={() => setMobileMenuOpen(false)}
             >
               Docs
-            </Link>
+            </a>
 
             <div className="pt-4 border-t border-border">
               {wallet.isConnected ? (

@@ -125,7 +125,7 @@ export async function broadcastTransaction(
     toAddress?: string;
   }
 ): Promise<{ txid: string; success: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/proposals/broadcast`, {
+  const response = await fetch(`${API_BASE_URL}/transactions/broadcast`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -293,7 +293,7 @@ export async function claimAirdrop(id: string, claimer: string): Promise<any> {
   const response = await fetch(`${API_BASE_URL}/airdrops/${id}/claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ claimer }),
+    body: JSON.stringify({ claimerAddress: claimer }),
   });
   if (!response.ok) throw new Error('Failed to claim airdrop');
   return response.json();
@@ -399,4 +399,3 @@ export async function updateBudgetPlanStatus(
   }
   return response.json();
 }
-

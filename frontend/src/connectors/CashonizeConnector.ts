@@ -225,7 +225,7 @@ export class CashonizeConnector implements IWalletConnector {
         chainId: this.getChainId(),
         request: {
           method: 'bch_signTransaction',
-          params: [request],
+          params: request,
         },
       }) as any;
 
@@ -266,7 +266,7 @@ export class CashonizeConnector implements IWalletConnector {
         chainId: this.getChainId(),
         request: {
           method: 'bch_signTransaction',
-          params: [request],
+          params: request,
         },
       }) as any;
 

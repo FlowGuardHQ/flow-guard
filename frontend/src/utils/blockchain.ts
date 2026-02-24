@@ -3,8 +3,9 @@
  * Handles wallet signing and transaction broadcasting
  */
 
-import { broadcastTransaction } from './api';
-import type { Transaction, SignedTransaction } from '../types/wallet';
+import { decodeTransaction, hexToBin } from '@bitauth/libauth';
+import { broadcastTransaction, getDepositInfo } from './api';
+import type { Transaction, SignedTransaction, CashScriptSignOptions, CashScriptSignResponse, SourceOutput } from '../types/wallet';
 
 export interface SignTransactionRequest {
   txHex: string;
@@ -19,9 +20,96 @@ export interface SignTransactionResult {
 export interface WalletInterface {
   signTransaction: (tx: Transaction) => Promise<SignedTransaction>;
   signRawTransaction?: (txHex: string) => Promise<string>;
+  signCashScriptTransaction?: (options: CashScriptSignOptions) => Promise<CashScriptSignResponse>;
   isConnected: boolean;
   address: string | null;
   walletType?: string | null;
+}
+
+export interface SerializedSourceOutput {
+  lockingBytecode: string;
+  valueSatoshis: string;
+  outpointTransactionHash?: string;
+  outpointIndex?: number;
+  unlockingBytecode?: string;
+  sequenceNumber?: number;
+  token?: {
+    category: string;
+    amount: string;
+    nft?: { capability: 'none' | 'mutable' | 'minting'; commitment: string };
+  };
+  contract?: { abiFunction: object; redeemScript: string; artifact: object };
+}
+
+export interface SerializedWcTransaction {
+  transaction: string;
+  sourceOutputs: SerializedSourceOutput[];
+  broadcast?: boolean;
+  userPrompt?: string;
+}
+
+/**
+ * Deserialize a serialized WC transaction payload from backend into wallet-ready signing options.
+ * Also ensures non-contract inputs keep empty unlocking bytecode so wallets can recognize owned inputs.
+ */
+export function deserializeWcSignOptions(serialized: SerializedWcTransaction): CashScriptSignOptions {
+  const decoded = decodeTransaction(hexToBin(serialized.transaction));
+  if (typeof decoded === 'string') {
+    throw new Error(`Failed to decode serialized transaction: ${decoded}`);
+  }
+
+  const sourceOutputs: SourceOutput[] = serialized.sourceOutputs.map(so => {
+    const out: SourceOutput & Record<string, unknown> = {
+      lockingBytecode: hexToBin(so.lockingBytecode),
+      valueSatoshis: BigInt(so.valueSatoshis),
+    };
+    // Extra outpoint fields needed by WalletConnect BCH signing spec
+    if (so.outpointTransactionHash) out['outpointTransactionHash'] = hexToBin(so.outpointTransactionHash);
+    if (so.outpointIndex !== undefined) out['outpointIndex'] = so.outpointIndex;
+    if (so.unlockingBytecode !== undefined) out.unlockingBytecode = hexToBin(so.unlockingBytecode);
+    if (so.sequenceNumber !== undefined) out['sequenceNumber'] = so.sequenceNumber;
+    if (so.token) {
+      out.token = {
+        category: hexToBin(so.token.category),
+        amount: BigInt(so.token.amount),
+        ...(so.token.nft ? {
+          nft: { capability: so.token.nft.capability, commitment: hexToBin(so.token.nft.commitment) },
+        } : {}),
+      };
+    }
+    if (so.contract) {
+      out.contract = {
+        abiFunction: so.contract.abiFunction as NonNullable<SourceOutput['contract']>['abiFunction'],
+        redeemScript: hexToBin(so.contract.redeemScript),
+        artifact: so.contract.artifact as NonNullable<SourceOutput['contract']>['artifact'],
+      };
+    }
+    return out as SourceOutput;
+  });
+
+  for (let i = 0; i < sourceOutputs.length; i++) {
+    const sourceOutput = sourceOutputs[i] as (SourceOutput & { contract?: unknown });
+    const txInput = decoded.inputs[i];
+    if (!txInput) continue;
+
+    // Preserve explicit unlocking bytecode from sourceOutputs when provided.
+    if (sourceOutput.unlockingBytecode !== undefined) {
+      txInput.unlockingBytecode = sourceOutput.unlockingBytecode;
+      continue;
+    }
+
+    // For wallet-owned P2PKH/P2SH inputs, keep empty unlocking bytecode to trigger wallet signing.
+    if (!sourceOutput.contract) {
+      txInput.unlockingBytecode = new Uint8Array(0);
+    }
+  }
+
+  return {
+    transaction: decoded as Record<string, unknown>,
+    sourceOutputs,
+    broadcast: serialized.broadcast,
+    userPrompt: serialized.userPrompt,
+  };
 }
 
 /**
@@ -140,6 +228,58 @@ export async function signAndBroadcast(
   }
 }
 
+async function signFromBackendPayload(
+  wallet: WalletInterface,
+  payload: any,
+  metadata?: {
+    txType?: 'create' | 'unlock' | 'proposal' | 'approve' | 'payout';
+    vaultId?: string;
+    proposalId?: string;
+    amount?: number;
+    fromAddress?: string;
+    toAddress?: string;
+  }
+): Promise<string> {
+  if (payload?.wcTransaction) {
+    if (!wallet.signCashScriptTransaction) {
+      throw new Error('Connected wallet does not support CashScript transactions');
+    }
+    const signOptions = deserializeWcSignOptions(payload.wcTransaction);
+    const tx = signOptions.transaction as { inputs?: Array<{ unlockingBytecode?: Uint8Array }>; outputs?: unknown[] };
+    const contractInputCount = signOptions.sourceOutputs.filter((so: any) => so.contract != null).length;
+
+    console.log('[FlowGuard][WC] Prepared transaction before signing', {
+      inputCount: tx.inputs?.length ?? 0,
+      outputCount: tx.outputs?.length ?? 0,
+      sourceOutputCount: signOptions.sourceOutputs.length,
+      contractInputCount,
+      userInputCount: signOptions.sourceOutputs.length - contractInputCount,
+    });
+
+    const signResult = await wallet.signCashScriptTransaction(
+      signOptions
+    );
+    return signResult.signedTransactionHash;
+  }
+
+  if (payload?.transaction?.txHex) {
+    return signAndBroadcast(wallet, payload.transaction.txHex, metadata);
+  }
+
+  if (payload?.txHex) {
+    return signAndBroadcast(wallet, payload.txHex, metadata);
+  }
+
+  if (payload?.transaction?.type && payload?.transaction?.contractType) {
+    throw new Error(
+      'Backend returned a descriptor-only transaction. ' +
+      'This on-chain flow is not fully wired for wallet signing yet.'
+    );
+  }
+
+  throw new Error('Backend did not return a signable transaction payload');
+}
+
 /**
  * Create, sign, and broadcast an on-chain proposal
  * @param wallet The wallet hook return value
@@ -150,16 +290,23 @@ export async function signAndBroadcast(
 export async function createProposalOnChain(
   wallet: WalletInterface,
   proposalId: string,
-  userPublicKey: string,
+  _userPublicKey: string,
   metadata?: { vaultId?: string; proposalId?: string; amount?: number; toAddress?: string }
 ): Promise<string> {
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transaction signing');
+  }
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+
   // Get the unsigned transaction from backend
   const apiUrl = '/api';
   const response = await fetch(`${apiUrl}/proposals/${proposalId}/create-onchain`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-signer-public-key': userPublicKey,
+      'x-user-address': wallet.address,
     },
   });
 
@@ -168,14 +315,33 @@ export async function createProposalOnChain(
     throw new Error(error.error || 'Failed to create proposal transaction');
   }
 
-  const { transaction } = await response.json();
+  const payload = await response.json();
+  if (!payload?.wcTransaction) {
+    throw new Error('Backend did not return proposal creation transaction');
+  }
 
-  // Sign and broadcast with metadata
-  return signAndBroadcast(wallet, transaction.txHex, {
-    txType: 'proposal',
-    ...metadata,
-    fromAddress: wallet.address || undefined,
+  const signResult = await wallet.signCashScriptTransaction(
+    deserializeWcSignOptions(payload.wcTransaction as SerializedWcTransaction),
+  );
+
+  const confirmResponse = await fetch(`${apiUrl}/proposals/${proposalId}/confirm-create`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({
+      txHash: signResult.signedTransactionHash,
+      metadata,
+    }),
   });
+
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm proposal creation' }));
+    throw new Error(error.error || 'Failed to confirm proposal creation');
+  }
+
+  return signResult.signedTransactionHash;
 }
 
 /**
@@ -188,16 +354,23 @@ export async function createProposalOnChain(
 export async function approveProposalOnChain(
   wallet: WalletInterface,
   proposalId: string,
-  userPublicKey: string,
+  _userPublicKey: string,
   metadata?: { vaultId?: string; proposalId?: string }
 ): Promise<string> {
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transaction signing');
+  }
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+
   // Get the unsigned transaction from backend
   const apiUrl = '/api';
   const response = await fetch(`${apiUrl}/proposals/${proposalId}/approve-onchain`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-signer-public-key': userPublicKey,
+      'x-user-address': wallet.address,
     },
   });
 
@@ -206,14 +379,33 @@ export async function approveProposalOnChain(
     throw new Error(error.error || 'Failed to create approval transaction');
   }
 
-  const { transaction } = await response.json();
+  const payload = await response.json();
+  if (!payload?.wcTransaction) {
+    throw new Error('Backend did not return proposal approval transaction');
+  }
 
-  // Sign and broadcast with metadata
-  return signAndBroadcast(wallet, transaction.txHex, {
-    txType: 'approve',
-    ...metadata,
-    fromAddress: wallet.address || undefined,
+  const signResult = await wallet.signCashScriptTransaction(
+    deserializeWcSignOptions(payload.wcTransaction as SerializedWcTransaction),
+  );
+
+  const confirmResponse = await fetch(`${apiUrl}/proposals/${proposalId}/confirm-approval`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({
+      txHash: signResult.signedTransactionHash,
+      metadata,
+    }),
   });
+
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm proposal approval' }));
+    throw new Error(error.error || 'Failed to confirm proposal approval');
+  }
+
+  return signResult.signedTransactionHash;
 }
 
 /**
@@ -226,14 +418,29 @@ export async function executePayoutOnChain(
   wallet: WalletInterface,
   proposalId: string,
   metadata?: { vaultId?: string; proposalId?: string; amount?: number; toAddress?: string }
-): Promise<string> {
-  // Get the unsigned transaction from backend
+): Promise<{
+  status: 'pending' | 'broadcasted';
+  sessionId: string;
+  signaturesCollected: number;
+  requiredSignatures: number;
+  txid?: string;
+  remainingSigners?: string[];
+}> {
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transaction signing');
+  }
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+
   const apiUrl = '/api';
-  const response = await fetch(`${apiUrl}/proposals/${proposalId}/execute-onchain`, {
+  const response = await fetch(`${apiUrl}/proposals/${proposalId}/execute`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
     },
+    body: JSON.stringify({ metadata }),
   });
 
   if (!response.ok) {
@@ -241,14 +448,50 @@ export async function executePayoutOnChain(
     throw new Error(error.error || 'Failed to create payout transaction');
   }
 
-  const { txHex } = await response.json();
+  const payload = await response.json();
+  if (!payload?.wcTransaction || !payload?.sessionId) {
+    throw new Error('Backend did not return execute signing session data');
+  }
 
-  // Sign and broadcast with metadata
-  return signAndBroadcast(wallet, txHex, {
-    txType: 'payout',
-    ...metadata,
-    fromAddress: wallet.address || undefined,
+  const signOptions = deserializeWcSignOptions(payload.wcTransaction as SerializedWcTransaction);
+  signOptions.broadcast = false;
+  const signResult = await wallet.signCashScriptTransaction(signOptions);
+
+  const submitResponse = await fetch(`${apiUrl}/proposals/${proposalId}/execute-signature`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({
+      sessionId: payload.sessionId,
+      signedTransaction: signResult.signedTransaction,
+    }),
   });
+
+  if (!submitResponse.ok) {
+    const error = await submitResponse.json();
+    throw new Error(error.error || 'Failed to submit execute signature');
+  }
+
+  const submitResult = await submitResponse.json();
+  if (submitResult.pending) {
+    return {
+      status: 'pending',
+      sessionId: payload.sessionId,
+      signaturesCollected: submitResult.signaturesCollected ?? 1,
+      requiredSignatures: submitResult.requiredSignatures ?? 2,
+      remainingSigners: submitResult.remainingSigners,
+    };
+  }
+
+  return {
+    status: 'broadcasted',
+    sessionId: payload.sessionId,
+    signaturesCollected: submitResult.signaturesCollected ?? 2,
+    requiredSignatures: submitResult.requiredSignatures ?? 2,
+    txid: submitResult.txid || signResult.signedTransactionHash,
+  };
 }
 
 /**
@@ -263,16 +506,20 @@ export async function unlockCycleOnChain(
   wallet: WalletInterface,
   vaultId: string,
   cycleNumber: number,
-  userPublicKey: string,
+  _userPublicKey: string,
   metadata?: { vaultId?: string; amount?: number }
 ): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+
   // Get the unsigned transaction from backend
   const apiUrl = '/api';
   const response = await fetch(`${apiUrl}/vaults/${vaultId}/unlock-onchain`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-signer-public-key': userPublicKey,
+      'x-user-address': wallet.address,
     },
     body: JSON.stringify({ cycleNumber }),
   });
@@ -282,10 +529,13 @@ export async function unlockCycleOnChain(
     throw new Error(error.error || 'Failed to create unlock transaction');
   }
 
-  const { transaction } = await response.json();
+  const payload = await response.json();
+  if (payload?.onChain === false || payload?.executionMode === 'policy') {
+    // v2 vault cycle unlock updates policy state; no covenant tx exists to sign.
+    return `policy-unlock:${vaultId}:${cycleNumber}:${Date.now()}`;
+  }
 
-  // Sign and broadcast with metadata
-  return signAndBroadcast(wallet, transaction.txHex, {
+  return signFromBackendPayload(wallet, payload, {
     txType: 'unlock',
     vaultId,
     ...metadata,
@@ -306,7 +556,8 @@ export async function depositToVault(
   wallet: WalletInterface,
   contractAddress: string,
   amountBCH: number,
-  onConfirm?: (details: { amount: number; recipient: string; network: 'mainnet' | 'testnet' | 'chipnet' }) => Promise<boolean>
+  onConfirm?: (details: { amount: number; recipient: string; network: 'mainnet' | 'testnet' | 'chipnet' }) => Promise<boolean>,
+  vaultId?: string,
 ): Promise<string> {
   try {
     if (!wallet.address) {
@@ -319,6 +570,36 @@ export async function depositToVault(
 
     // Convert BCH to satoshis
     const amountSatoshis = Math.floor(amountBCH * 100000000);
+
+    // Preferred path: backend-built WC transaction that initializes vault state NFT.
+    if (vaultId) {
+      try {
+        const depositInfo = await getDepositInfo(vaultId, wallet.address);
+        if (depositInfo?.wcTransaction && wallet.signCashScriptTransaction) {
+          const signResult = await wallet.signCashScriptTransaction(
+            deserializeWcSignOptions(depositInfo.wcTransaction as SerializedWcTransaction),
+          );
+          return signResult.signedTransactionHash;
+        }
+
+        const isInitialFunding = Number(depositInfo?.currentBalance || 0) <= 0 && Number(depositInfo?.amountToDeposit || 0) > 0;
+        if (isInitialFunding) {
+          if (!wallet.signCashScriptTransaction) {
+            throw new Error(
+              'This wallet cannot initialize a vault state NFT. ' +
+              'Use a WalletConnect/CashScript-compatible wallet to fund new vaults.',
+            );
+          }
+          throw new Error(
+            depositInfo?.warning ||
+            'Vault state-NFT bootstrap transaction could not be built for this wallet/address.',
+          );
+        }
+      } catch (fundingError) {
+        console.warn('[FlowGuard][VaultFunding] Failed to build state-NFT funding tx:', fundingError);
+        throw fundingError;
+      }
+    }
 
     // For mainnet.cash wallets, show confirmation dialog if callback provided
     if (onConfirm && wallet.walletType === 'mainnet') {
@@ -422,20 +703,15 @@ export async function fundStreamContract(
       throw new Error(error.message || 'Failed to get funding info');
     }
 
-    const { fundingInfo } = await response.json();
-
-    // For now, use simple transaction send (BCH only)
-    // TODO: Add NFT commitment and CashTokens support
-    const transaction: Transaction = {
-      to: fundingInfo.contractAddress,
-      amount: fundingInfo.amount, // satoshis (dust for tokens, full amount for BCH)
-    };
-
-    const signedTx = await wallet.signTransaction(transaction);
-
-    if (!signedTx.txId) {
-      throw new Error('Transaction ID not returned from wallet');
+    const { wcTransaction } = await response.json();
+    if (!wcTransaction || !wallet.signCashScriptTransaction) {
+      throw new Error(
+        'Stream funding requires a CashScript-compatible wallet transaction object from backend.'
+      );
     }
+
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm funding with backend
     const confirmResponse = await fetch(`${apiUrl}/streams/${streamId}/confirm-funding`, {
@@ -444,7 +720,7 @@ export async function fundStreamContract(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        txHash: signedTx.txId,
+        txHash: txId,
       }),
     });
 
@@ -454,7 +730,7 @@ export async function fundStreamContract(
       // Still return txId even if confirmation fails
     }
 
-    return signedTx.txId;
+    return txId;
   } catch (error: any) {
     console.error('Failed to fund stream:', error);
 
@@ -502,19 +778,19 @@ export async function claimStreamFunds(
       throw new Error(error.error || 'Failed to build claim transaction');
     }
 
-    const { claimableAmount, inputs, outputs, fee, contractFunction, contractParams, message } = await response.json();
+    const { claimableAmount, wcTransaction } = await response.json();
 
     if (claimableAmount <= 0) {
       throw new Error('No funds available to claim at this time');
     }
 
-    // TODO: Build and sign actual covenant transaction
-    // The backend provides structured transaction parameters (inputs, outputs, fee, contractParams)
-    // In production, this would build the actual covenant transaction with claim() function
-    console.log('Claim transaction ready:', { claimableAmount, inputs, outputs, fee, contractFunction, contractParams, message });
+    if (!wcTransaction) throw new Error('No transaction returned from backend');
+    if (!wallet.signCashScriptTransaction) {
+      throw new Error('Connected wallet does not support CashScript transactions');
+    }
 
-    // Placeholder: Generate random txId until covenant transaction building is implemented
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm claim with backend
     const confirmResponse = await fetch(`${apiUrl}/streams/${streamId}/confirm-claim`, {
@@ -578,20 +854,15 @@ export async function fundPaymentContract(
       throw new Error(error.message || 'Failed to get funding info');
     }
 
-    const { fundingInfo } = await response.json();
-
-    // For now, use simple transaction send (BCH only)
-    // TODO: Add NFT commitment and CashTokens support
-    const transaction: Transaction = {
-      to: fundingInfo.contractAddress,
-      amount: fundingInfo.amount,
-    };
-
-    const signedTx = await wallet.signTransaction(transaction);
-
-    if (!signedTx.txId) {
-      throw new Error('Transaction ID not returned from wallet');
+    const { wcTransaction } = await response.json();
+    if (!wcTransaction || !wallet.signCashScriptTransaction) {
+      throw new Error(
+        'Payment funding requires a CashScript-compatible wallet transaction object from backend.'
+      );
     }
+
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm funding with backend
     const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-funding`, {
@@ -600,7 +871,7 @@ export async function fundPaymentContract(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        txHash: signedTx.txId,
+        txHash: txId,
       }),
     });
 
@@ -609,7 +880,7 @@ export async function fundPaymentContract(
       console.error('Failed to confirm funding, but transaction was broadcast:', error);
     }
 
-    return signedTx.txId;
+    return txId;
   } catch (error: any) {
     console.error('Failed to fund payment:', error);
 
@@ -657,20 +928,19 @@ export async function claimPaymentFunds(
       throw new Error(error.error || 'Failed to build claim transaction');
     }
 
-    const { claimableAmount, intervalsClaimable } = await response.json();
+    const { claimableAmount, intervalsClaimable, wcTransaction } = await response.json();
 
     if (claimableAmount <= 0) {
       throw new Error('No payment intervals available to claim at this time');
     }
 
-    // TODO: Build and sign actual covenant transaction
-    // For now, use simple placeholder
-    console.log('Claim transaction ready:', { claimableAmount, intervalsClaimable });
+    if (!wallet.signCashScriptTransaction || !wcTransaction) {
+      throw new Error('No WalletConnect-compatible claim transaction returned from backend');
+    }
 
-    // Placeholder: In production, this would build the actual covenant transaction
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
-    // Confirm claim with backend
     const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-claim`, {
       method: 'POST',
       headers: {
@@ -678,13 +948,14 @@ export async function claimPaymentFunds(
       },
       body: JSON.stringify({
         claimedAmount: claimableAmount,
+        intervalsClaimed: intervalsClaimable,
         txHash: txId,
       }),
     });
 
     if (!confirmResponse.ok) {
       const error = await confirmResponse.json();
-      console.error('Failed to confirm claim, but transaction was broadcast:', error);
+      console.error('Failed to confirm payment claim, but transaction was broadcast:', error);
     }
 
     return txId;
@@ -701,6 +972,256 @@ export async function claimPaymentFunds(
 
     throw new Error(`Claim failed: ${error.message || 'Unknown error'}`);
   }
+}
+
+/**
+ * Pause a recurring payment on-chain.
+ */
+export async function pausePaymentOnChain(
+  wallet: WalletInterface,
+  paymentId: string
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/payments/${paymentId}/pause`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build pause transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return pause transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-pause`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm pause transaction');
+  }
+
+  return txHash;
+}
+
+/**
+ * Resume a recurring payment on-chain.
+ */
+export async function resumePaymentOnChain(
+  wallet: WalletInterface,
+  paymentId: string
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/payments/${paymentId}/resume`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build resume transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build resume transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return resume transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm resume transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm resume transaction');
+  }
+
+  return txHash;
+}
+
+/**
+ * Cancel a recurring payment on-chain.
+ */
+export async function cancelPaymentOnChain(
+  wallet: WalletInterface,
+  paymentId: string
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/payments/${paymentId}/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build cancel transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return cancel transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm cancel transaction');
+  }
+
+  return txHash;
+}
+
+/**
+ * Pause an airdrop campaign on-chain.
+ */
+export async function pauseAirdropOnChain(
+  wallet: WalletInterface,
+  airdropId: string
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/airdrops/${airdropId}/pause`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build pause transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return pause transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-pause`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm pause transaction');
+  }
+
+  return txHash;
+}
+
+/**
+ * Cancel an airdrop campaign on-chain.
+ */
+export async function cancelAirdropOnChain(
+  wallet: WalletInterface,
+  airdropId: string,
+  options?: { allowUnsafeRecovery?: boolean }
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/airdrops/${airdropId}/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({
+      allowUnsafeRecovery: options?.allowUnsafeRecovery === true,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build cancel transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return cancel transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm cancel transaction');
+  }
+
+  return txHash;
 }
 
 /**
@@ -732,20 +1253,15 @@ export async function fundAirdropContract(
       throw new Error(error.message || 'Failed to get funding info');
     }
 
-    const { fundingInfo } = await response.json();
-
-    // For now, use simple transaction send
-    // TODO: Add NFT commitment and CashTokens support with merkle root
-    const transaction: Transaction = {
-      to: fundingInfo.contractAddress,
-      amount: fundingInfo.totalAmount,
-    };
-
-    const signedTx = await wallet.signTransaction(transaction);
-
-    if (!signedTx.txId) {
-      throw new Error('Transaction ID not returned from wallet');
+    const { wcTransaction } = await response.json();
+    if (!wcTransaction || !wallet.signCashScriptTransaction) {
+      throw new Error(
+        'Airdrop funding requires a CashScript-compatible wallet transaction object from backend.'
+      );
     }
+
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm funding with backend
     const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-funding`, {
@@ -754,7 +1270,7 @@ export async function fundAirdropContract(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        txHash: signedTx.txId,
+        txHash: txId,
       }),
     });
 
@@ -763,7 +1279,7 @@ export async function fundAirdropContract(
       console.error('Failed to confirm funding, but transaction was broadcast:', error);
     }
 
-    return signedTx.txId;
+    return txId;
   } catch (error: any) {
     console.error('Failed to fund airdrop:', error);
 
@@ -811,20 +1327,19 @@ export async function claimAirdropFunds(
       throw new Error(error.error || 'Failed to build claim transaction');
     }
 
-    const { claimAmount } = await response.json();
+    const { claimAmount, wcTransaction } = await response.json();
 
     if (claimAmount <= 0) {
       throw new Error('No airdrop allocation available for this address');
     }
 
-    // TODO: Build and sign actual covenant transaction with merkle proof
-    // For now, use simple placeholder
-    console.log('Airdrop claim transaction ready:', { claimAmount });
+    if (!wallet.signCashScriptTransaction || !wcTransaction) {
+      throw new Error('No WalletConnect-compatible claim transaction returned from backend');
+    }
 
-    // Placeholder: In production, this would build the actual covenant transaction
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
-    // Confirm claim with backend
     const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-claim`, {
       method: 'POST',
       headers: {
@@ -839,7 +1354,7 @@ export async function claimAirdropFunds(
 
     if (!confirmResponse.ok) {
       const error = await confirmResponse.json();
-      console.error('Failed to confirm claim, but transaction was broadcast:', error);
+      console.error('Failed to confirm airdrop claim, but transaction was broadcast:', error);
     }
 
     return txId;
@@ -903,16 +1418,17 @@ export async function lockTokensToVote(
       throw new Error(error.error || 'Failed to build lock transaction');
     }
 
-    const { deployment, lockTransaction } = await response.json();
+    const { deployment, wcTransaction } = await response.json();
 
-    // TODO: Build and sign actual covenant transaction
-    // For now, use simple placeholder
-    console.log('Vote lock transaction ready:', { voteChoice, stakeAmount, deployment });
+    if (!wcTransaction) throw new Error('No lock transaction returned from backend');
+    if (!wallet.signCashScriptTransaction) {
+      throw new Error('Connected wallet does not support CashScript transactions');
+    }
 
-    // Placeholder: In production, this would build the actual covenant transaction
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
-    // Confirm lock with backend
+    // Confirm lock with backend — store contract data so unlock can reconstruct it
     const confirmResponse = await fetch(`${apiUrl}/governance/${proposalId}/confirm-lock`, {
       method: 'POST',
       headers: {
@@ -923,6 +1439,10 @@ export async function lockTokensToVote(
         voteChoice,
         weight: stakeAmount,
         txHash: txId,
+        contractAddress: deployment.contractAddress,
+        voteId: deployment.voteId,
+        constructorParams: deployment.constructorParams,
+        nftCommitment: deployment.initialCommitment,
       }),
     });
 
@@ -990,12 +1510,15 @@ export async function unlockVotingTokens(
 
     const { unlockTransaction } = await response.json();
 
-    // TODO: Build and sign actual covenant transaction
-    // For now, use simple placeholder
-    console.log('Token unlock transaction ready:', { stakeAmount, unlockTransaction });
+    if (!unlockTransaction?.wcTransaction) throw new Error('No unlock transaction returned from backend');
+    if (!wallet.signCashScriptTransaction) {
+      throw new Error('Connected wallet does not support CashScript transactions');
+    }
 
-    // Placeholder: In production, this would build the actual covenant transaction
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    const signResult = await wallet.signCashScriptTransaction(
+      deserializeWcSignOptions(unlockTransaction.wcTransaction),
+    );
+    const txId = signResult.signedTransactionHash;
 
     // Confirm unlock with backend
     const confirmResponse = await fetch(`${apiUrl}/governance/${proposalId}/confirm-unlock`, {
@@ -1051,6 +1574,7 @@ export async function fundBudgetPlan(
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'x-user-address': wallet.address,
       },
     });
 
@@ -1059,20 +1583,15 @@ export async function fundBudgetPlan(
       throw new Error(error.message || 'Failed to get funding info');
     }
 
-    const { fundingInfo } = await response.json();
-
-    // For now, use simple transaction send
-    // TODO: Add NFT commitment and CashTokens support
-    const transaction: Transaction = {
-      to: fundingInfo.contractAddress,
-      amount: fundingInfo.totalAmount,
-    };
-
-    const signedTx = await wallet.signTransaction(transaction);
-
-    if (!signedTx.txId) {
-      throw new Error('Transaction ID not returned from wallet');
+    const { wcTransaction } = await response.json();
+    if (!wcTransaction || !wallet.signCashScriptTransaction) {
+      throw new Error(
+        'Budget funding requires a CashScript-compatible wallet transaction object from backend.'
+      );
     }
+
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm funding with backend
     const confirmResponse = await fetch(`${apiUrl}/budget-plans/${budgetId}/confirm-funding`, {
@@ -1081,7 +1600,7 @@ export async function fundBudgetPlan(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        txHash: signedTx.txId,
+        txHash: txId,
       }),
     });
 
@@ -1090,7 +1609,7 @@ export async function fundBudgetPlan(
       console.error('Failed to confirm funding, but transaction was broadcast:', error);
     }
 
-    return signedTx.txId;
+    return txId;
   } catch (error: any) {
     console.error('Failed to fund budget plan:', error);
 
@@ -1138,18 +1657,22 @@ export async function releaseMilestone(
       throw new Error(error.error || 'Failed to build release transaction');
     }
 
-    const { releasableAmount, milestonesReleasable } = await response.json();
+    const { releasableAmount, milestonesReleasable, wcTransaction } = await response.json();
 
     if (releasableAmount <= 0) {
       throw new Error('No milestones available to release yet');
     }
 
-    // TODO: Build and sign actual covenant transaction
-    // For now, use simple placeholder
-    console.log('Milestone release transaction ready:', { releasableAmount, milestonesReleasable });
+    if (!wallet.signCashScriptTransaction || !wcTransaction) {
+      throw new Error(
+        'Milestone release signing is not wired for this wallet yet. ' +
+        'Backend must return a WalletConnect-compatible transaction object.'
+      );
+    }
 
-    // Placeholder: In production, this would build the actual covenant transaction
-    const txId = '0x' + Math.random().toString(16).substring(2);
+    console.log('Milestone release transaction ready:', { releasableAmount, milestonesReleasable });
+    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const txId = signResult.signedTransactionHash;
 
     // Confirm release with backend
     const confirmResponse = await fetch(`${apiUrl}/budget-plans/${budgetId}/confirm-release`, {
@@ -1182,4 +1705,110 @@ export async function releaseMilestone(
 
     throw new Error(`Release failed: ${error.message || 'Unknown error'}`);
   }
+}
+
+/**
+ * Pause a budget plan on-chain.
+ */
+export async function pauseBudgetPlanOnChain(
+  wallet: WalletInterface,
+  budgetId: string
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/budget-plans/${budgetId}/pause`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build pause transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return pause transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/budget-plans/${budgetId}/confirm-pause`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm pause transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm pause transaction');
+  }
+
+  return txHash;
+}
+
+/**
+ * Cancel a budget plan on-chain.
+ */
+export async function cancelBudgetPlanOnChain(
+  wallet: WalletInterface,
+  budgetId: string,
+  options?: { allowUnsafeRecovery?: boolean }
+): Promise<string> {
+  if (!wallet.address) {
+    throw new Error('Wallet not connected');
+  }
+  if (!wallet.signCashScriptTransaction) {
+    throw new Error('Connected wallet does not support CashScript transactions');
+  }
+
+  const apiUrl = '/api';
+  const response = await fetch(`${apiUrl}/budget-plans/${budgetId}/cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({
+      allowUnsafeRecovery: options?.allowUnsafeRecovery === true,
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Failed to build cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to build cancel transaction');
+  }
+
+  const { wcTransaction } = await response.json();
+  if (!wcTransaction) {
+    throw new Error('Backend did not return cancel transaction');
+  }
+
+  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+  const txHash = signResult.signedTransactionHash;
+
+  const confirmResponse = await fetch(`${apiUrl}/budget-plans/${budgetId}/confirm-cancel`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-address': wallet.address,
+    },
+    body: JSON.stringify({ txHash }),
+  });
+  if (!confirmResponse.ok) {
+    const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm cancel transaction' }));
+    throw new Error(error.error || error.message || 'Failed to confirm cancel transaction');
+  }
+
+  return txHash;
 }
