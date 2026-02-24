@@ -119,7 +119,14 @@ export class BlockchainMonitor {
    * @param txid Transaction ID
    */
   async waitForConfirmation(txid: string, maxAttempts: number = 60): Promise<boolean> {
-    return await this.contractService.waitForConfirmation(txid, maxAttempts);
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        const tx = await this.contractService.getTransaction(txid) as any;
+        if (tx && tx.confirmations && tx.confirmations > 0) return true;
+      } catch {}
+      await new Promise(r => setTimeout(r, 10000));
+    }
+    return false;
   }
 
   /**

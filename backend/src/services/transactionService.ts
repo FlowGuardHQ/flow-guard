@@ -119,10 +119,11 @@ export class TransactionService {
   static getVaultTransactions(vaultId: string): TransactionRecord[] {
     const stmt = db!.prepare(`
       SELECT * FROM transactions 
-      WHERE vault_id = ? 
+      WHERE vault_id = ?
+         OR vault_id = (SELECT vault_id FROM vaults WHERE id = ? LIMIT 1)
       ORDER BY created_at DESC
     `);
-    const rows = stmt.all(vaultId) as any[];
+    const rows = stmt.all(vaultId, vaultId) as any[];
 
     return rows.map((row) => ({
       id: row.id,
@@ -185,4 +186,3 @@ export class TransactionService {
     }));
   }
 }
-

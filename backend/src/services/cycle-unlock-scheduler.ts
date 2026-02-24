@@ -3,10 +3,14 @@
  * Monitors vaults and triggers cycle unlocks when conditions are met
  */
 
+import { randomUUID } from 'crypto';
 import db from '../database/schema.js';
 import { VaultService } from './vaultService.js';
 import { StateService } from './state-service.js';
 import { ContractService } from './contract-service.js';
+import { Contract, ElectrumNetworkProvider, SignatureTemplate, TransactionBuilder, placeholderPublicKey, placeholderSignature } from 'cashscript';
+import { ContractFactory } from './ContractFactory.js';
+import { binToHex, hexToBin } from '@bitauth/libauth';
 
 export interface CycleUnlockResult {
   vaultId: string;
@@ -140,7 +144,7 @@ export class CycleUnlockScheduler {
 
     if (!existing) {
       // Create cycle record
-      const id = require('crypto').randomUUID();
+      const id = randomUUID();
       const insertStmt = db!.prepare(`
         INSERT INTO cycles (
           id, vault_id, cycle_number, unlock_time, unlock_amount, status
@@ -173,25 +177,79 @@ export class CycleUnlockScheduler {
     return Math.floor(new Date(startTime).getTime() / 1000);
   }
 
+  private parseConstructorParams(raw: string | undefined): any[] {
+    if (!raw) return [];
+    const params = JSON.parse(raw || '[]');
+    return params.map((param: any) => {
+      if (param && typeof param === 'object') {
+        if (param.type === 'bigint') return BigInt(param.value);
+        if (param.type === 'bytes') return hexToBin(param.value);
+        if (param.type === 'boolean') return param.value === 'true' || param.value === true;
+        return param.value;
+      }
+      return param;
+    });
+  }
+
+  private normalizeCommitment(commitment: string | Uint8Array): Uint8Array {
+    return typeof commitment === 'string' ? hexToBin(commitment) : commitment;
+  }
+
+  private readUint32BE(bytes: Uint8Array, offset: number): number {
+    return (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+  }
+
+  private readUint64BE(bytes: Uint8Array, offset: number): bigint {
+    let result = 0n;
+    for (let i = 0; i < 8; i++) {
+      result = (result << 8n) + BigInt(bytes[offset + i]);
+    }
+    return result;
+  }
+
+  private toBigIntParam(value: unknown, name: string): bigint {
+    if (typeof value === 'bigint') return value;
+    if (typeof value === 'number') return BigInt(Math.trunc(value));
+    if (typeof value === 'string' && value.length > 0) return BigInt(value);
+    throw new Error(`Invalid constructor parameter for ${name}`);
+  }
+
+  private buildNextCommitment(
+    current: Uint8Array,
+    newPeriodId: number,
+    newSpent: bigint,
+    locktime: bigint,
+  ): Uint8Array {
+    const next = new Uint8Array(current);
+    // status stays same at byte 1
+    next[5] = (newPeriodId >> 24) & 0xff;
+    next[6] = (newPeriodId >> 16) & 0xff;
+    next[7] = (newPeriodId >> 8) & 0xff;
+    next[8] = newPeriodId & 0xff;
+
+    // spent_this_period bytes 9-16 big-endian
+    for (let i = 0; i < 8; i++) {
+      next[16 - i] = Number((newSpent >> BigInt(8 * i)) & 0xffn);
+    }
+    // last_update_timestamp bytes 17-24 big-endian
+    for (let i = 0; i < 8; i++) {
+      next[24 - i] = Number((locktime >> BigInt(8 * i)) & 0xffn);
+    }
+    // reserved remains as-is
+    return next;
+  }
+
   /**
    * Create unlock transaction for a specific cycle
    */
   async createUnlockTransaction(
     vaultId: string,
     cycleNumber: number,
-    signerPublicKey: string
-  ): Promise<{ transaction: any; newState: number }> {
+    _signerPublicKey?: string
+  ): Promise<{ wcTransaction: any; newState: number; newPeriodId: number }> {
     const vault = VaultService.getVaultByVaultId(vaultId);
     if (!vault || !vault.contractAddress || !vault.signerPubkeys) {
       throw new Error('Vault not found or missing contract information');
-    }
-
-    // Verify signer is authorized
-    const signerIndex = vault.signerPubkeys.findIndex(
-      pk => pk.toLowerCase() === signerPublicKey.toLowerCase()
-    );
-    if (signerIndex === -1) {
-      throw new Error('Signer not authorized');
     }
 
     const vaultStartTime = this.getVaultStartTime(vault as any);
@@ -202,19 +260,76 @@ export class CycleUnlockScheduler {
       throw new Error(`Cycle ${cycleNumber} cannot be unlocked yet`);
     }
 
-    // Create unlock transaction
-    const result = await this.contractService.createCycleUnlock(
-      vault.contractAddress,
-      cycleNumber,
-      currentState,
-      vaultStartTime,
-      vault.cycleDuration,
-      vault.signerPubkeys,
-      vault.approvalThreshold,
-      vault.spendingCap * 100000000
+    // Build on-chain unlock transaction using VaultCovenant.unlockPeriod
+    const network: 'chipnet' = 'chipnet';
+    const provider = new ElectrumNetworkProvider(network);
+    const artifact = ContractFactory.getArtifact('VaultCovenant');
+    const rawParams = (vault as any).constructorParamsJson || (vault as any).constructor_params;
+    const constructorParams = this.parseConstructorParams(rawParams);
+    const contract = new Contract(artifact, constructorParams, { provider });
+
+    const contractUtxos = await provider.getUtxos(vault.contractAddress);
+    if (!contractUtxos?.length) {
+      throw new Error(`No UTXOs found for vault contract ${vault.contractAddress}`);
+    }
+    const contractUtxo = contractUtxos.find((u: any) => u.token?.nft != null) ?? contractUtxos[0];
+    if (!contractUtxo.token?.nft) {
+      throw new Error('Vault contract UTXO is missing the mutable state NFT required by VaultCovenant.unlockPeriod');
+    }
+
+    const commitment = this.normalizeCommitment(contractUtxo.token.nft.commitment);
+    const currentPeriodId = this.readUint32BE(commitment, 5);
+    const lastUpdate = this.readUint64BE(commitment, 17);
+    const periodDuration = this.toBigIntParam(constructorParams[5], 'periodDuration');
+
+    const now = Math.floor(Date.now() / 1000);
+    const earliest = Number(lastUpdate + periodDuration);
+    if (periodDuration > 0n && now < earliest) {
+      throw new Error(`Cycle unlock not yet allowed; earliest ${new Date(earliest * 1000).toISOString()}`);
+    }
+
+    const newPeriodId = currentPeriodId + 1;
+    const newSpent = 0n;
+    const feeReserve = 1500n;
+    const stateOutputSatoshis = contractUtxo.satoshis - feeReserve;
+    if (stateOutputSatoshis < 546n) {
+      throw new Error('Insufficient vault balance to pay unlock fee from treasury UTXO');
+    }
+
+    const newCommitment = this.buildNextCommitment(commitment, newPeriodId, newSpent, BigInt(now));
+
+    const txBuilder = new TransactionBuilder({ provider });
+    txBuilder.setLocktime(now);
+    txBuilder.addInput(
+      contractUtxo,
+      contract.unlock.unlockPeriod(
+        new SignatureTemplate(placeholderSignature()),
+        placeholderPublicKey(),
+        BigInt(newPeriodId),
+        newSpent,
+      ),
     );
 
-    return result;
+    txBuilder.addOutput({
+      to: contract.tokenAddress,
+      amount: stateOutputSatoshis,
+      token: {
+        category: contractUtxo.token.category,
+        amount: contractUtxo.token.amount ?? 0n,
+        nft: {
+          capability: contractUtxo.token.nft.capability as 'none' | 'mutable' | 'minting',
+          commitment: binToHex(newCommitment),
+        },
+      },
+    });
+
+    const wcTransaction = txBuilder.generateWcTransactionObject({
+      broadcast: true,
+      userPrompt: `Unlock treasury period #${newPeriodId}`,
+    });
+
+    const newState = StateService.setCycleUnlocked(currentState, cycleNumber);
+    return { wcTransaction, newState, newPeriodId };
   }
 
   /**
@@ -298,4 +413,3 @@ export function stopCycleUnlockScheduler(): void {
     schedulerInstance.stop();
   }
 }
-

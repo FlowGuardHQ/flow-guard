@@ -16,36 +16,31 @@ export class VaultService {
 
     let contractAddress: string | undefined;
     let contractBytecode: string | undefined;
+    let constructorParams: any[] = [];
 
-    // Deploy contract to blockchain
+    // Non-custodial instantiation
     try {
       const contractService = new ContractService('chipnet');
-      const startTimeUnix = Math.floor(Date.now() / 1000);
-      // Convert spendingCap from BCH to satoshis for contract deployment
       const spendingCapSatoshis = Math.floor((dto.spendingCap || 0) * 100000000);
-      const deployment = await contractService.deployVault(
-        dto.signerPubkeys[0],
-        dto.signerPubkeys[1],
-        dto.signerPubkeys[2],
-        dto.approvalThreshold,
-        0, // Initial state
-        dto.cycleDuration,
-        startTimeUnix,
-        spendingCapSatoshis
-      );
+
+      const deployment = await contractService.deployVault({
+        signerPubkeys: dto.signerPubkeys,
+        requiredApprovals: dto.approvalThreshold,
+        periodDuration: dto.cycleDuration,
+        periodCap: spendingCapSatoshis,
+        recipientCap: 0,
+        allowlistEnabled: false,
+      });
 
       contractAddress = deployment.contractAddress;
       contractBytecode = deployment.bytecode;
+      constructorParams = deployment.constructorParams;
 
-      console.log('Contract deployed successfully:', {
-        vaultId,
-        contractAddress,
-      });
+      console.log('Vault initialized (waiting for funding):', { vaultId, contractAddress });
+
     } catch (error) {
-      console.error('Failed to deploy contract:', error);
-      // For now, continue without contract deployment (graceful degradation)
-      // In production, you might want to throw an error here
-      console.warn('Continuing vault creation without blockchain deployment');
+      console.error('Failed to initialize vault contract:', error);
+      console.warn('Continuing without contract address');
     }
 
     // Set start time to now (for cycle calculations)
@@ -55,8 +50,8 @@ export class VaultService {
       INSERT INTO vaults (
         id, vault_id, name, description, creator, total_deposit, spending_cap, approval_threshold,
         signers, signer_pubkeys, state, cycle_duration, unlock_amount, is_public,
-        contract_address, contract_bytecode, balance, start_time
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        contract_address, contract_bytecode, balance, start_time, constructor_params, tx_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -77,7 +72,9 @@ export class VaultService {
       contractAddress || null,
       contractBytecode || null,
       0, // Initial balance
-      startTime
+      startTime,
+      JSON.stringify(constructorParams),
+      null // tx_hash will be set when vault is funded
     );
 
     const vault = this.getVaultById(id);
@@ -86,40 +83,10 @@ export class VaultService {
     }
     return vault;
   }
-  
+
   static getVaultById(id: string): Vault | null {
     const stmt = db!.prepare('SELECT * FROM vaults WHERE id = ?');
     const row = stmt.get(id) as any;
-
-    if (!row) return null;
-
-      return {
-        id: row.id,
-        vaultId: row.vault_id,
-        name: row.name || undefined,
-        description: row.description || undefined,
-        creator: row.creator,
-        totalDeposit: row.total_deposit,
-        spendingCap: row.spending_cap,
-        approvalThreshold: row.approval_threshold,
-        signers: JSON.parse(row.signers),
-        signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
-        state: row.state,
-        cycleDuration: row.cycle_duration,
-        unlockAmount: row.unlock_amount,
-        isPublic: Boolean(row.is_public),
-        contractAddress: row.contract_address || undefined,
-        contractBytecode: row.contract_bytecode || undefined,
-        balance: row.balance || 0,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-        startTime: row.start_time ? new Date(row.start_time) : new Date(row.created_at),
-      };
-    }
-  
-  static getVaultByVaultId(vaultId: string): Vault | null {
-    const stmt = db!.prepare('SELECT * FROM vaults WHERE vault_id = ?');
-    const row = stmt.get(vaultId) as any;
 
     if (!row) return null;
 
@@ -146,7 +113,41 @@ export class VaultService {
       startTime: row.start_time ? new Date(row.start_time) : new Date(row.created_at),
     };
   }
-  
+
+  static getVaultByVaultId(vaultId: string): Vault | null {
+    const stmt = db!.prepare(`
+      SELECT * FROM vaults
+      WHERE vault_id = ? OR id = ?
+      LIMIT 1
+    `);
+    const row = stmt.get(vaultId, vaultId) as any;
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      vaultId: row.vault_id,
+      name: row.name || undefined,
+      description: row.description || undefined,
+      creator: row.creator,
+      totalDeposit: row.total_deposit,
+      spendingCap: row.spending_cap,
+      approvalThreshold: row.approval_threshold,
+      signers: JSON.parse(row.signers),
+      signerPubkeys: row.signer_pubkeys ? JSON.parse(row.signer_pubkeys) : undefined,
+      state: row.state,
+      cycleDuration: row.cycle_duration,
+      unlockAmount: row.unlock_amount,
+      isPublic: Boolean(row.is_public),
+      contractAddress: row.contract_address || undefined,
+      contractBytecode: row.contract_bytecode || undefined,
+      balance: row.balance || 0,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at),
+      startTime: row.start_time ? new Date(row.start_time) : new Date(row.created_at),
+    };
+  }
+
   static getUserVaults(userAddress: string): Vault[] {
     const stmt = db!.prepare(`
       SELECT * FROM vaults
@@ -218,18 +219,18 @@ export class VaultService {
   static canViewVault(vault: Vault, userAddress: string): boolean {
     // Public vaults can be viewed by anyone
     if (vault.isPublic) return true;
-    
+
     // Private vaults can only be viewed by creator or signers
     return this.isCreator(vault, userAddress) || this.isSigner(vault, userAddress);
   }
-  
+
   static updateVaultState(vaultId: string, newState: number): void {
     const stmt = db!.prepare(`
       UPDATE vaults 
       SET state = ?, updated_at = CURRENT_TIMESTAMP 
-      WHERE vault_id = ?
+      WHERE vault_id = ? OR id = ?
     `);
-    stmt.run(newState, vaultId);
+    stmt.run(newState, vaultId, vaultId);
   }
 
   static addSigner(vaultId: string, newSignerAddress: string, requesterAddress: string): Vault {
@@ -276,14 +277,17 @@ export class VaultService {
     // Update balance (add to existing balance)
     const newBalance = (vault.balance || 0) + amount;
 
+    // Update balance and tx_hash if this is the first funding transaction
     const stmt = db!.prepare(`
-      UPDATE vaults 
-      SET balance = ?, updated_at = CURRENT_TIMESTAMP 
+      UPDATE vaults
+      SET balance = ?,
+          tx_hash = COALESCE(tx_hash, ?),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `);
-    stmt.run(newBalance, vaultId);
+    stmt.run(newBalance, txid || null, vaultId);
 
-    // Optionally log the transaction
+    // Log the transaction
     if (txid) {
       const txStmt = db!.prepare(`
         INSERT INTO transactions (id, tx_hash, vault_id, tx_type, amount, to_address, status)
@@ -303,4 +307,3 @@ export class VaultService {
     return this.getVaultById(vaultId)!;
   }
 }
-

@@ -3,31 +3,31 @@
  * Deploys contracts, creates transactions, monitors blockchain
  */
 
-import { Contract, ElectrumNetworkProvider, SignatureTemplate } from 'cashscript';
-import { binToHex, hexToBin, cashAddressToLockingBytecode } from '@bitauth/libauth';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { StateService } from './state-service.js';
-
-// Load artifact using fs to avoid ES module import assertion issues
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-// Using FlowGuardEnhanced - full-featured contract with state management, proposals, approvals
-const artifact = JSON.parse(
-  readFileSync(join(__dirname, '../contracts/FlowGuardEnhanced.json'), 'utf-8')
-);
+import { Contract, ElectrumNetworkProvider } from 'cashscript';
+import {
+  hash160,
+  hexToBin,
+  binToHex,
+  cashAddressToLockingBytecode,
+} from '@bitauth/libauth';
+import { ContractFactory } from './ContractFactory.js';
 
 export interface VaultDeployment {
   contractAddress: string;
   contractId: string;
   bytecode: string;
+  constructorParams: ConstructorParam[];
+}
+
+export interface ConstructorParam {
+  type: 'bigint' | 'bytes' | 'string' | 'boolean';
+  value: string; // hex for bytes, string representation for others
 }
 
 export interface ProposalTransaction {
   txHex: string;
   txId: string;
-  requiresSignatures: string[]; // Pubkeys that need to sign
+  requiresSignatures: string[];
 }
 
 export interface UTXO {
@@ -37,9 +37,16 @@ export interface UTXO {
   height?: number;
 }
 
-/**
- * Service for interacting with BCH blockchain and FlowGuard contracts
- */
+export interface VaultParams {
+  signerPubkeys: string[]; // hex-encoded compressed pubkeys
+  requiredApprovals: number;
+  periodDuration: number; // seconds (0 = unlimited)
+  periodCap: number; // satoshis (0 = unlimited)
+  recipientCap: number; // satoshis (0 = unlimited)
+  allowlistEnabled: boolean;
+  allowedAddresses?: string[]; // BCH cashaddr (up to 3)
+}
+
 export class ContractService {
   private provider: ElectrumNetworkProvider;
   private network: 'mainnet' | 'testnet3' | 'testnet4' | 'chipnet';
@@ -50,155 +57,212 @@ export class ContractService {
   }
 
   /**
-   * Convert BCH address to bytes20 (hash160)
-   * @param address BCH address (cashaddr format like bchtest:pq...)
-   * @returns Uint8Array of 20 bytes (hash160)
+   * Compute hash160 of a hex-encoded compressed pubkey
    */
-  private addressToBytes20(address: string): Uint8Array {
-    try {
-      const decoded = cashAddressToLockingBytecode(address);
-
-      // Check if decoding failed (returns error string)
-      if (typeof decoded === 'string') {
-        throw new Error(decoded);
-      }
-
-      if (decoded.bytecode.length < 23) {
-        throw new Error('Invalid address bytecode length');
-      }
-
-      // Extract hash160 from P2PKH locking bytecode
-      // P2PKH format: OP_DUP OP_HASH160 <20 bytes> OP_EQUALVERIFY OP_CHECKSIG
-      // We extract bytes 3-23 (the 20-byte hash)
-      return decoded.bytecode.slice(3, 23);
-    } catch (error) {
-      console.error('Failed to convert address to bytes20:', error);
-      throw new Error(`Invalid BCH address: ${address}`);
-    }
+  static pubkeyToHash160(pubkeyHex: string): Uint8Array {
+    return hash160(hexToBin(pubkeyHex));
   }
 
   /**
-   * Deploy a new vault contract to the blockchain (FlowGuardEnhanced)
-   * @param signer1 First signer's public key (hex)
-   * @param signer2 Second signer's public key (hex)
-   * @param signer3 Third signer's public key (hex)
-   * @param approvalThreshold Number of signatures required (e.g., 2 for 2-of-3)
-   * @param state Initial state (0 for new vault)
-   * @param cycleDuration Cycle duration in seconds
-   * @param vaultStartTime Unix timestamp when vault starts
-   * @param spendingCap Maximum spending per period in satoshis
+   * Extract hash160 from a P2PKH cashaddr
    */
-  async deployVault(
-    signer1: string,
-    signer2: string,
-    signer3: string,
-    approvalThreshold: number,
-    state: number = 0,
-    cycleDuration: number,
-    vaultStartTime: number,
-    spendingCap: number
-  ): Promise<VaultDeployment> {
-    try {
-      // Convert hex pubkeys to Uint8Array
-      const pk1 = hexToBin(signer1);
-      const pk2 = hexToBin(signer2);
-      const pk3 = hexToBin(signer3);
-
-      // Create contract instance with FlowGuardEnhanced parameters
-      const contract = new Contract(
-        artifact as any,
-        [
-          pk1,
-          pk2,
-          pk3,
-          BigInt(approvalThreshold),
-          BigInt(state),
-          BigInt(cycleDuration),
-          BigInt(vaultStartTime),
-          BigInt(spendingCap),
-        ],
-        { provider: this.provider }
-      );
-
-      console.log('Contract deployed:', {
-        address: contract.address,
-        network: this.network,
-      });
-
-      // Get bytecode from artifact (already compiled)
-      const bytecode = artifact.bytecode || '';
-
-      return {
-        contractAddress: contract.address,
-        contractId: contract.toString(),
-        bytecode: bytecode,
-      };
-    } catch (error) {
-      console.error('Failed to deploy vault:', error);
-      throw new Error(`Contract deployment failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  private addressToHash160(address: string): Uint8Array {
+    const decoded = cashAddressToLockingBytecode(address);
+    if (typeof decoded === 'string') throw new Error(decoded);
+    const b = decoded.bytecode;
+    const isP2pkh = b.length === 25
+      && b[0] === 0x76
+      && b[1] === 0xa9
+      && b[2] === 0x14
+      && b[23] === 0x88
+      && b[24] === 0xac;
+    if (!isP2pkh) {
+      throw new Error(`Vault allowlist entries must be P2PKH addresses: ${address}`);
     }
+    return b.slice(3, 23);
   }
 
   /**
-   * Get contract instance from address (FlowGuardEnhanced)
-   * @param contractAddress The contract's cashaddr
+   * Generate a deterministic vaultId from signer hashes + creation timestamp
    */
-  async getContract(
-    contractAddress: string,
-    signer1: string,
-    signer2: string,
-    signer3: string,
-    approvalThreshold: number,
-    state: number,
-    cycleDuration: number,
-    vaultStartTime: number,
-    spendingCap: number
-  ): Promise<Contract> {
-    const pk1 = hexToBin(signer1);
-    const pk2 = hexToBin(signer2);
-    const pk3 = hexToBin(signer3);
+  private generateVaultId(signerHashes: Uint8Array[], createdAt: number): Uint8Array {
+    // Simple derivation: hash160(concat(signer hashes + 8-byte timestamp))
+    const combined = new Uint8Array(60 + 8); // 3 * 20 + 8
+    combined.set(signerHashes[0], 0);
+    combined.set(signerHashes[1], 20);
+    combined.set(signerHashes[2], 40);
+    const tsView = new DataView(combined.buffer, 60, 8);
+    tsView.setBigUint64(0, BigInt(createdAt), true);
+    // Pad to 32 bytes: take hash160 and prepend 12 zero bytes
+    const h = hash160(combined);
+    const id = new Uint8Array(32);
+    id.set(h, 12);
+    return id;
+  }
+
+  /**
+   * Deploy (instantiate) a new VaultCovenant.
+   * Does NOT broadcast — returns the deterministic contract address.
+   */
+  async deployVault(params: VaultParams): Promise<VaultDeployment> {
+    if (params.signerPubkeys.length !== 3) {
+      throw new Error('Exactly 3 signer public keys are required');
+    }
+
+    const artifact = ContractFactory.getArtifact('VaultCovenant');
+
+    const signer1Hash = ContractService.pubkeyToHash160(params.signerPubkeys[0]);
+    const signer2Hash = ContractService.pubkeyToHash160(params.signerPubkeys[1]);
+    const signer3Hash = ContractService.pubkeyToHash160(params.signerPubkeys[2]);
+
+    const vaultId = this.generateVaultId([signer1Hash, signer2Hash, signer3Hash], Date.now());
+
+    // Allowlist addresses → hash160 (up to 3, pad with zeros)
+    const addrs = (params.allowedAddresses || []).slice(0, 3);
+    const allowlistHashes: Uint8Array[] = [
+      new Uint8Array(20),
+      new Uint8Array(20),
+      new Uint8Array(20),
+    ];
+    for (let i = 0; i < addrs.length; i++) {
+      allowlistHashes[i] = this.addressToHash160(addrs[i]);
+    }
 
     const contract = new Contract(
-      artifact as any,
+      artifact,
       [
-        pk1,
-        pk2,
-        pk3,
-        BigInt(approvalThreshold),
-        BigInt(state),
-        BigInt(cycleDuration),
-        BigInt(vaultStartTime),
-        BigInt(spendingCap),
+        vaultId,
+        BigInt(params.requiredApprovals),
+        signer1Hash,
+        signer2Hash,
+        signer3Hash,
+        BigInt(params.periodDuration),
+        BigInt(params.periodCap),
+        BigInt(params.recipientCap),
+        BigInt(params.allowlistEnabled ? 1 : 0),
+        allowlistHashes[0],
+        allowlistHashes[1],
+        allowlistHashes[2],
       ],
       { provider: this.provider }
     );
 
-    // Verify the contract address matches
-    if (contract.address !== contractAddress) {
-      throw new Error('Contract parameters do not match the given address');
+    console.log('VaultCovenant instantiated:', {
+      address: contract.address,
+      vaultId: binToHex(vaultId),
+      network: this.network,
+    });
+
+    // Return constructor params in serializable format for storage
+    const constructorParams: ConstructorParam[] = [
+      { type: 'bytes', value: binToHex(vaultId) },
+      { type: 'bigint', value: params.requiredApprovals.toString() },
+      { type: 'bytes', value: binToHex(signer1Hash) },
+      { type: 'bytes', value: binToHex(signer2Hash) },
+      { type: 'bytes', value: binToHex(signer3Hash) },
+      { type: 'bigint', value: params.periodDuration.toString() },
+      { type: 'bigint', value: params.periodCap.toString() },
+      { type: 'bigint', value: params.recipientCap.toString() },
+      { type: 'bigint', value: (params.allowlistEnabled ? 1 : 0).toString() },
+      { type: 'bytes', value: binToHex(allowlistHashes[0]) },
+      { type: 'bytes', value: binToHex(allowlistHashes[1]) },
+      { type: 'bytes', value: binToHex(allowlistHashes[2]) },
+    ];
+
+    return {
+      contractAddress: contract.address,
+      contractId: binToHex(vaultId),
+      bytecode: artifact.bytecode,
+      constructorParams,
+    };
+  }
+
+  /**
+   * Instantiate a VaultCovenant from stored parameters (for tx building)
+   */
+  getVaultContract(
+    signerPubkeys: string[],
+    requiredApprovals: number,
+    vaultId: string, // hex-encoded 32-byte vault ID
+    periodDuration: number,
+    periodCap: number,
+    recipientCap: number,
+    allowlistEnabled: boolean,
+    allowedAddresses?: string[]
+  ): Contract {
+    const artifact = ContractFactory.getArtifact('VaultCovenant');
+
+    const signer1Hash = ContractService.pubkeyToHash160(signerPubkeys[0]);
+    const signer2Hash = ContractService.pubkeyToHash160(signerPubkeys[1]);
+    const signer3Hash = ContractService.pubkeyToHash160(signerPubkeys[2]);
+
+    const addrs = (allowedAddresses || []).slice(0, 3);
+    const allowlistHashes: Uint8Array[] = [
+      new Uint8Array(20),
+      new Uint8Array(20),
+      new Uint8Array(20),
+    ];
+    for (let i = 0; i < addrs.length; i++) {
+      allowlistHashes[i] = this.addressToHash160(addrs[i]);
     }
 
-    return contract;
+    return new Contract(
+      artifact,
+      [
+        hexToBin(vaultId),
+        BigInt(requiredApprovals),
+        signer1Hash,
+        signer2Hash,
+        signer3Hash,
+        BigInt(periodDuration),
+        BigInt(periodCap),
+        BigInt(recipientCap),
+        BigInt(allowlistEnabled ? 1 : 0),
+        allowlistHashes[0],
+        allowlistHashes[1],
+        allowlistHashes[2],
+      ],
+      { provider: this.provider }
+    );
+  }
+
+  /**
+   * Instantiate a ProposalCovenant
+   */
+  getProposalContract(
+    vaultId: string,
+    signerPubkeys: string[],
+    requiredApprovals: number
+  ): Contract {
+    const artifact = ContractFactory.getArtifact('ProposalCovenant');
+
+    return new Contract(
+      artifact,
+      [
+        hexToBin(vaultId),
+        ContractService.pubkeyToHash160(signerPubkeys[0]),
+        ContractService.pubkeyToHash160(signerPubkeys[1]),
+        ContractService.pubkeyToHash160(signerPubkeys[2]),
+        BigInt(requiredApprovals),
+      ],
+      { provider: this.provider }
+    );
   }
 
   /**
    * Get balance of a contract address
-   * @param contractAddress The contract's cashaddr
    */
   async getBalance(contractAddress: string): Promise<number> {
     try {
       const utxos = await this.provider.getUtxos(contractAddress);
-      const balance = utxos.reduce((sum, utxo) => sum + Number(utxo.satoshis), 0);
-      return balance;
-    } catch (error) {
-      console.error('Failed to get balance:', error);
+      return utxos.reduce((sum, utxo) => sum + Number(utxo.satoshis), 0);
+    } catch {
       return 0;
     }
   }
 
   /**
    * Get all UTXOs for a contract address
-   * @param contractAddress The contract's cashaddr
    */
   async getUTXOs(contractAddress: string): Promise<UTXO[]> {
     try {
@@ -209,103 +273,13 @@ export class ContractService {
         satoshis: Number(utxo.satoshis),
         height: utxo.height || undefined,
       }));
-    } catch (error) {
-      console.error('Failed to get UTXOs:', error);
+    } catch {
       return [];
     }
   }
 
   /**
-   * Create a payout transaction using FlowGuardEnhanced.executePayout
-   * This builds the transaction that requires threshold signatures
-   *
-   * @param contractAddress The vault contract address
-   * @param recipientAddress Where to send the funds (BCH address)
-   * @param amount Amount to send in satoshis
-   * @param proposalId Proposal ID for tracking
-   * @param currentState Current vault state
-   * @param signerPublicKeys Array of signer public keys [signer1, signer2, signer3]
-   * @param approvalThreshold Number of signatures required (e.g., 2 for 2-of-3)
-   * @param cycleDuration Cycle duration from vault
-   * @param vaultStartTime Vault start time from vault
-   * @param spendingCap Spending cap from vault
-   */
-  async createPayoutTransaction(
-    contractAddress: string,
-    recipientAddress: string,
-    amount: number,
-    proposalId: number,
-    currentState: number,
-    signerPublicKeys: string[],
-    approvalThreshold: number,
-    cycleDuration: number,
-    vaultStartTime: number,
-    spendingCap: number
-  ): Promise<ProposalTransaction> {
-    try {
-      if (signerPublicKeys.length !== 3) {
-        throw new Error('Exactly 3 signer public keys required');
-      }
-
-      const [signer1, signer2, signer3] = signerPublicKeys;
-
-      // Calculate new state with proposal marked as executed
-      const newState = StateService.setProposalExecuted(currentState, proposalId);
-
-      // Get contract instance with all parameters
-      const contract = await this.getContract(
-        contractAddress,
-        signer1,
-        signer2,
-        signer3,
-        approvalThreshold,
-        currentState,
-        cycleDuration,
-        vaultStartTime,
-        spendingCap
-      );
-
-      const pk1 = hexToBin(signer1);
-      const pk2 = hexToBin(signer2);
-      const pk3 = hexToBin(signer3);
-
-      // Convert recipient address to bytes20 (hash160)
-      const recipientHash = this.addressToBytes20(recipientAddress);
-
-      // Create SignatureTemplate placeholders for each signer
-      const sig1 = new SignatureTemplate(pk1);
-      const sig2 = new SignatureTemplate(pk2);
-      const sig3 = new SignatureTemplate(pk3);
-
-      // Build the transaction using executePayout function
-      const transaction = await contract.functions
-        .executePayout(
-          recipientHash,
-          BigInt(amount),
-          BigInt(proposalId),
-          BigInt(newState),
-          pk1, sig1,
-          pk2, sig2,
-          pk3, sig3
-        )
-        .to(recipientAddress, BigInt(amount))
-        .withHardcodedFee(BigInt(1000)) // 1000 sats fee
-        .build();
-
-      return {
-        txHex: transaction.toString(),
-        txId: '', // Will be set after signing and broadcasting
-        requiresSignatures: signerPublicKeys,
-      };
-    } catch (error) {
-      console.error('Failed to create payout transaction:', error);
-      throw new Error(`Payout transaction creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
    * Broadcast a signed transaction to the network
-   * @param txHex The signed transaction hex
    */
   async broadcastTransaction(txHex: string): Promise<string> {
     try {
@@ -313,51 +287,7 @@ export class ContractService {
       console.log('Transaction broadcast:', txid);
       return txid;
     } catch (error) {
-      console.error('Failed to broadcast transaction:', error);
-      throw new Error(`Transaction broadcast failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Monitor a transaction until it's confirmed
-   * @param txid Transaction ID to monitor
-   * @param maxAttempts Maximum number of attempts (default: 60)
-   * @param delayMs Delay between attempts in ms (default: 10000 = 10s)
-   */
-  async waitForConfirmation(
-    txid: string,
-    maxAttempts: number = 60,
-    delayMs: number = 10000
-  ): Promise<boolean> {
-    for (let i = 0; i < maxAttempts; i++) {
-      try {
-        const txInfo = await this.provider.getRawTransaction(txid) as any;
-        if (txInfo && txInfo.confirmations && txInfo.confirmations > 0) {
-          console.log(`Transaction ${txid} confirmed with ${txInfo.confirmations} confirmations`);
-          return true;
-        }
-      } catch (error) {
-        // Transaction not found yet, continue waiting
-      }
-
-      // Wait before next attempt
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-
-    console.warn(`Transaction ${txid} not confirmed after ${maxAttempts} attempts`);
-    return false;
-  }
-
-  /**
-   * Get transaction details
-   * @param txid Transaction ID
-   */
-  async getTransaction(txid: string): Promise<any> {
-    try {
-      return await this.provider.getRawTransaction(txid);
-    } catch (error) {
-      console.error('Failed to get transaction:', error);
-      return null;
+      throw new Error(`Broadcast failed: ${error instanceof Error ? error.message : error}`);
     }
   }
 
@@ -367,327 +297,52 @@ export class ContractService {
   async getBlockHeight(): Promise<number> {
     try {
       return await this.provider.getBlockHeight();
-    } catch (error) {
-      console.error('Failed to get block height:', error);
+    } catch {
       return 0;
     }
   }
 
   /**
-   * Create on-chain proposal transaction with state management
-   * Calls FlowGuardEnhanced.createProposal() function
-   *
-   * @param contractAddress The vault contract address
-   * @param recipientAddress Where to send the funds (BCH address)
-   * @param amount Amount to send in satoshis
-   * @param proposalId On-chain proposal ID
-   * @param currentState Current vault state (bitwise encoded)
-   * @param signerPublicKeys Array of signer public keys
-   * @param approvalThreshold Number of signatures required
-   * @param cycleDuration Cycle duration from vault
-   * @param vaultStartTime Vault start time from vault
-   * @param spendingCap Maximum spending per period
+   * Get transaction details
    */
-  async createOnChainProposal(
-    contractAddress: string,
-    recipientAddress: string,
-    amount: number,
-    proposalId: number,
-    currentState: number,
-    signerPublicKeys: string[],
-    approvalThreshold: number,
-    cycleDuration: number,
-    vaultStartTime: number,
-    spendingCap: number
-  ): Promise<ProposalTransaction> {
+  async getTransaction(txid: string): Promise<any> {
     try {
-      if (signerPublicKeys.length !== 3) {
-        throw new Error('Exactly 3 signer public keys required');
-      }
-
-      // Verify proposal doesn't already exist
-      if (StateService.isProposalPending(currentState, proposalId) ||
-          StateService.getProposalStatus(currentState, proposalId) !== 0) {
-        throw new Error(`Proposal ${proposalId} already exists`);
-      }
-
-      // Verify amount doesn't exceed spending cap
-      if (amount > spendingCap) {
-        throw new Error(`Amount ${amount} exceeds spending cap ${spendingCap}`);
-      }
-
-      // Calculate new state with proposal marked as pending
-      const newState = StateService.setProposalPending(currentState, proposalId);
-
-      const [signer1, signer2, signer3] = signerPublicKeys;
-
-      // Get contract instance
-      const contract = await this.getContract(
-        contractAddress,
-        signer1,
-        signer2,
-        signer3,
-        approvalThreshold,
-        currentState,
-        cycleDuration,
-        vaultStartTime,
-        spendingCap
-      );
-
-      const pk1 = hexToBin(signer1);
-
-      // Convert recipient address to bytes20 (hash160)
-      const recipientHash = this.addressToBytes20(recipientAddress);
-
-      // Create signature template for the signer
-      const sig1 = new SignatureTemplate(pk1);
-
-      // Build transaction using createProposal function
-      const transaction = await contract.functions
-        .createProposal(
-          recipientHash,
-          BigInt(amount),
-          BigInt(proposalId),
-          BigInt(newState),
-          pk1,
-          sig1
-        )
-        .withHardcodedFee(BigInt(1000))
-        .build();
-
-      return {
-        txHex: transaction.toString(),
-        txId: '',
-        requiresSignatures: [signerPublicKeys[0]], // Only needs one signature for proposal creation
-      };
-    } catch (error) {
-      console.error('Failed to create on-chain proposal:', error);
-      throw new Error(`On-chain proposal creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return await this.provider.getRawTransaction(txid);
+    } catch {
+      return null;
     }
   }
 
   /**
-   * Create on-chain approval transaction with state management
-   * Calls FlowGuardEnhanced.approveProposal() function
-   *
-   * @param contractAddress The vault contract address
-   * @param proposalId On-chain proposal ID
-   * @param currentState Current vault state (bitwise encoded)
-   * @param signerPublicKeys Array of signer public keys
-   * @param approvalThreshold Number of signatures required
-   * @param cycleDuration Cycle duration from vault
-   * @param vaultStartTime Vault start time from vault
-   * @param spendingCap Maximum spending per period
+   * Get NFT commitment from covenant UTXO
+   * Returns hex-encoded commitment or null if not found
    */
-  async createOnChainApproval(
-    contractAddress: string,
-    proposalId: number,
-    currentState: number,
-    signerPublicKeys: string[],
-    approvalThreshold: number,
-    cycleDuration: number,
-    vaultStartTime: number,
-    spendingCap: number
-  ): Promise<{ newState: number; isApproved: boolean; transaction: ProposalTransaction }> {
+  async getNFTCommitment(contractAddress: string): Promise<string | null> {
     try {
-      if (signerPublicKeys.length !== 3) {
-        throw new Error('Exactly 3 signer public keys required');
+      const utxos = await this.provider.getUtxos(contractAddress);
+
+      if (utxos.length === 0) {
+        return null;
       }
 
-      // Verify proposal is pending
-      if (!StateService.isProposalPending(currentState, proposalId)) {
-        throw new Error(`Proposal ${proposalId} is not pending`);
+      // Find UTXO with NFT token
+      for (const utxo of utxos) {
+        const commitment = (utxo as any).token?.nft?.commitment as unknown;
+        if (commitment == null) continue;
+
+        // Return hex-encoded commitment
+        if (typeof commitment === 'string') {
+          return commitment;
+        }
+        if (commitment instanceof Uint8Array) {
+          return binToHex(commitment);
+        }
       }
 
-      // Increment approval and check if threshold is met
-      const { newState, isApproved } = StateService.incrementApprovalWithCheck(
-        currentState,
-        proposalId,
-        approvalThreshold
-      );
-
-      const [signer1, signer2, signer3] = signerPublicKeys;
-
-      // Get contract instance
-      const contract = await this.getContract(
-        contractAddress,
-        signer1,
-        signer2,
-        signer3,
-        approvalThreshold,
-        currentState,
-        cycleDuration,
-        vaultStartTime,
-        spendingCap
-      );
-
-      const pk1 = hexToBin(signer1);
-
-      // Create signature template
-      const sig1 = new SignatureTemplate(pk1);
-
-      // Build transaction using approveProposal function
-      const transaction = await contract.functions
-        .approveProposal(
-          BigInt(proposalId),
-          BigInt(newState),
-          pk1,
-          sig1
-        )
-        .withHardcodedFee(BigInt(1000))
-        .build();
-
-      return {
-        newState,
-        isApproved,
-        transaction: {
-          txHex: transaction.toString(),
-          txId: '',
-          requiresSignatures: [signerPublicKeys[0]], // Only needs one signature for approval
-        },
-      };
+      return null;
     } catch (error) {
-      console.error('Failed to create on-chain approval:', error);
-      throw new Error(`On-chain approval creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Create cycle unlock transaction with state management
-   * Calls FlowGuardEnhanced.unlock() function
-   *
-   * @param contractAddress The vault contract address
-   * @param cycleNumber Cycle number to unlock
-   * @param currentState Current vault state (bitwise encoded)
-   * @param vaultStartTime Unix timestamp when vault was created
-   * @param cycleDuration Cycle duration in seconds
-   * @param signerPublicKeys Array of signer public keys
-   * @param approvalThreshold Approval threshold from vault
-   * @param spendingCap Spending cap from vault
-   */
-  async createCycleUnlock(
-    contractAddress: string,
-    cycleNumber: number,
-    currentState: number,
-    vaultStartTime: number,
-    cycleDuration: number,
-    signerPublicKeys: string[],
-    approvalThreshold: number,
-    spendingCap: number
-  ): Promise<{ newState: number; transaction: ProposalTransaction }> {
-    try {
-      if (signerPublicKeys.length !== 3) {
-        throw new Error('Exactly 3 signer public keys required');
-      }
-
-      // Check if cycle can be unlocked
-      if (!StateService.canUnlockCycle(currentState, cycleNumber, vaultStartTime, cycleDuration)) {
-        throw new Error(`Cycle ${cycleNumber} cannot be unlocked yet`);
-      }
-
-      // Calculate new state with cycle marked as unlocked
-      const newState = StateService.setCycleUnlocked(currentState, cycleNumber);
-
-      const [signer1, signer2, signer3] = signerPublicKeys;
-
-      // Get contract instance
-      const contract = await this.getContract(
-        contractAddress,
-        signer1,
-        signer2,
-        signer3,
-        approvalThreshold,
-        currentState,
-        cycleDuration,
-        vaultStartTime,
-        spendingCap
-      );
-
-      const pk1 = hexToBin(signer1);
-
-      // Create signature template
-      const sig1 = new SignatureTemplate(pk1);
-
-      // Build transaction using unlock function
-      const transaction = await contract.functions
-        .unlock(
-          BigInt(cycleNumber),
-          BigInt(newState),
-          pk1,
-          sig1
-        )
-        .withHardcodedFee(BigInt(1000))
-        .build();
-
-      return {
-        newState,
-        transaction: {
-          txHex: transaction.toString(),
-          txId: '',
-          requiresSignatures: [signerPublicKeys[0]], // Only needs one signature for unlock
-        },
-      };
-    } catch (error) {
-      console.error('Failed to create cycle unlock:', error);
-      throw new Error(`Cycle unlock creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }
-
-  /**
-   * Create execute payout transaction with state management
-   * 
-   * @param contractAddress The vault contract address
-   * @param recipientAddress Where to send the funds
-   * @param amount Amount to send in satoshis
-   * @param proposalId On-chain proposal ID
-   * @param currentState Current vault state (bitwise encoded)
-   * @param signerPublicKeys Array of signer public keys
-   * @param approvalThreshold Number of signatures required
-   * @param spendingCap Maximum spending per period
-   */
-  async createExecutePayout(
-    contractAddress: string,
-    recipientAddress: string,
-    amount: number,
-    proposalId: number,
-    currentState: number,
-    signerPublicKeys: string[],
-    approvalThreshold: number,
-    spendingCap: number
-  ): Promise<{ newState: number; transaction: ProposalTransaction }> {
-    try {
-      if (signerPublicKeys.length !== 3) {
-        throw new Error('Exactly 3 signer public keys required');
-      }
-
-      // Verify proposal is approved
-      if (!StateService.isProposalApproved(currentState, proposalId)) {
-        throw new Error(`Proposal ${proposalId} is not approved`);
-      }
-
-      // Verify amount doesn't exceed spending cap
-      if (amount > spendingCap) {
-        throw new Error(`Amount ${amount} exceeds spending cap ${spendingCap}`);
-      }
-
-      // Calculate new state with proposal marked as executed
-      const newState = StateService.setProposalExecuted(currentState, proposalId);
-
-      // Note: This would call the enhanced contract's executePayout function
-      // The actual transaction building would be:
-      // contract.functions.executePayout(recipient, amount, proposalId, newState, pk1, sig1, pk2, sig2, pk3, sig3)
-
-      return {
-        newState,
-        transaction: {
-          txHex: '', // Will be built when enhanced contract is deployed
-          txId: '',
-          requiresSignatures: signerPublicKeys.slice(0, approvalThreshold), // Needs threshold signatures
-        },
-      };
-    } catch (error) {
-      console.error('Failed to create execute payout:', error);
-      throw new Error(`Execute payout creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error(`Failed to get NFT commitment for ${contractAddress}:`, error);
+      return null;
     }
   }
 }
