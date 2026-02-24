@@ -282,7 +282,7 @@ export class FlowGuardIndexer {
       // Process UTXOs that were created at or around targetHeight
       // We check a range because exact block height matching is tricky
       for (const utxo of utxos) {
-        const utxoHeight = utxo.height || 0;
+        const utxoHeight = (utxo as any).height || 0;
 
         // Only process UTXOs created at or near this height
         // (within 10 blocks to account for timing issues)
@@ -291,7 +291,7 @@ export class FlowGuardIndexer {
 
           // Check if UTXO has a CashToken with NFT
           if (utxo.token?.nft) {
-            await this.processCovenantUTXO(utxo, address, blockTimestamp);
+            await this.processCovenantUTXO(utxo as any, address, blockTimestamp);
           } else {
             console.log(`[Indexer]           Skipped (no NFT)`);
           }
@@ -573,8 +573,8 @@ export class FlowGuardIndexer {
 
     // Read uint24 approval_count (3 bytes big-endian)
     const approvalCount = (commitment.readUInt8(5) << 16) |
-                          (commitment.readUInt8(6) << 8) |
-                          commitment.readUInt8(7);
+      (commitment.readUInt8(6) << 8) |
+      commitment.readUInt8(7);
 
     return {
       version: commitment.readUInt32BE(0),

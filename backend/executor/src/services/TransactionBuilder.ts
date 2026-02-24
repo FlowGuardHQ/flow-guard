@@ -21,10 +21,11 @@ import {
   VaultUTXO,
   ScheduleState,
   VaultState,
+  ProposalState,
   ProposalStatus,
   ScheduleType,
   VaultStatus,
-} from '@flowguard/shared/types/covenant-types';
+} from '@flowguard/shared/types';
 
 /**
  * Transaction Builder Configuration
@@ -153,18 +154,18 @@ export class TransactionBuilder {
         ...(isFinalUnlock
           ? []
           : [
-              {
-                address: schedule.address, // Same covenant address
-                satoshis: BigInt(remainingBalance),
-                token: {
-                  category: schedule.token?.category,
-                  nft: {
-                    capability: 'none' as const,
-                    commitment: this.encodeScheduleState(newState),
-                  },
+            {
+              address: schedule.address, // Same covenant address
+              satoshis: BigInt(remainingBalance),
+              token: {
+                category: schedule.token?.category,
+                nft: {
+                  capability: 'none' as const,
+                  commitment: this.encodeScheduleState(newState),
                 },
               },
-            ]),
+            },
+          ]),
         // Output 2: Executor fee
         {
           address: executorAddress,

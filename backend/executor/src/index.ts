@@ -164,7 +164,7 @@ export class FlowGuardExecutor {
     const currentTime = BigInt(Math.floor(Date.now() / 1000));
 
     // 1. Scan for executable schedules (unlocks ready)
-    const schedules = await this.db.query<ScheduleUTXO>(`
+    const schedules = await this.db.query<any>(`
       SELECT *
       FROM schedules
       WHERE is_spent = FALSE
@@ -181,7 +181,7 @@ export class FlowGuardExecutor {
     }
 
     // 2. Scan for executable proposals (approved + timelock passed)
-    const proposals = await this.db.query<ProposalUTXO>(`
+    const proposals = await this.db.query<any>(`
       SELECT *
       FROM proposals
       WHERE is_spent = FALSE
