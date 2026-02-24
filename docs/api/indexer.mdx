@@ -1,0 +1,42 @@
+---
+title: "Indexer API"
+description: "Optional Postgres-backed chain indexer for enriched TVL, volume, and on-chain state queries."
+icon: "database"
+---
+
+The Indexer is an optional service (`backend/indexer/`) that maintains a Postgres database of confirmed on-chain state by watching the BCH blockchain. It provides richer analytics than the SQLite-based core API.
+
+## When to Use the Indexer
+
+The core API (`/api/streams`, `/api/airdrops`, etc.) relies on the database records written by the frontend when a user confirms a transaction. The Indexer independently reads confirmed blockchain state and can surface:
+
+- Streams and payments that were funded but never confirmed via the frontend
+- Real-time NFT commitment diffs (showing actual vested amounts between claims)
+- Historical TVL snapshots and daily volume
+
+## Running the Indexer
+
+```bash
+cd backend/indexer
+npm install
+npm run start
+```
+
+Requires `DATABASE_URL` (Postgres connection string) and `BCH_NETWORK` in environment.
+
+## Indexer Endpoints
+
+The Indexer exposes its own HTTP server (default `:3002`) separate from the core API.
+
+```http
+GET /indexer/streams
+GET /indexer/streams/:contractAddress
+GET /indexer/payments
+GET /indexer/airdrops
+GET /indexer/tvl
+GET /indexer/volume?from=1700000000&to=1731536000
+```
+
+## Core API Integration
+
+When the Indexer is running, the core backend can optionally query it to enrich responses. Set `INDEXER_URL=http://localhost:3002` in the backend `.env` to enable this.

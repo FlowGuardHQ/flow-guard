@@ -1,0 +1,58 @@
+---
+title: "Explorer API"
+description: "Endpoints for querying cross-product activity feeds and global stats."
+icon: "telescope"
+---
+
+The Explorer provides a public, unified view across all FlowGuard activity — vesting streams, recurring payments, airdrops, and treasury proposals.
+
+## Activity Feed
+
+```http
+GET /api/explorer/activity
+```
+
+Returns a merged, time-sorted list of activity across all product types.
+
+**Query parameters**
+
+| Parameter | Values | Description |
+|-----------|--------|-------------|
+| `type` | `vesting`, `payments`, `airdrops`, `treasuries` | Filter to a single product type. Omit for all. |
+| `token` | `BCH`, `FUNGIBLE_TOKEN`, `ALL` | Filter by asset type. |
+| `status` | `ACTIVE`, `PENDING`, `COMPLETED`, `CANCELLED` | Filter by status. |
+| `limit` | 1–200 (default 50) | Max records to return. |
+
+**Response**
+```json
+{
+  "streams": [
+    {
+      "id": "...",
+      "stream_id": "#FG-STREAM-001",
+      "sender": "bitcoincash:q...",
+      "recipient": "bitcoincash:q...",
+      "token_type": "BCH",
+      "total_amount": 10.0,
+      "vested_amount": 4.5,
+      "progress_percentage": 45,
+      "stream_type": "LINEAR",
+      "status": "ACTIVE",
+      "created_at": 1700000000,
+      "activity_type": "STREAM"
+    }
+  ],
+  "stats": {
+    "totalVolume": 125000,
+    "activeCount": 18,
+    "completedCount": 7,
+    "totalCount": 25
+  }
+}
+```
+
+Each row in `streams` includes an `activity_type` field set to `STREAM`, `PAYMENT`, `AIRDROP`, or `TREASURY` indicating the source product.
+
+<Note>
+Comprehensive analytics (token breakdowns, TVL history, daily volume charts) are served by the Indexer service at `/api/indexer/*`.
+</Note>

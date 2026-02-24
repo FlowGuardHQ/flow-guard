@@ -1,0 +1,84 @@
+---
+title: "API Overview"
+description: "Base URL, authentication, and common response patterns for the FlowGuard backend API."
+icon: "code"
+---
+
+All FlowGuard products — vesting, recurring payments, airdrops, grants, bounties, rewards, and governance — are backed by a single Express API running at your configured `VITE_API_BASE_URL`.
+
+## Base URL
+
+```
+http://localhost:3001/api
+```
+
+In production this points to your Railway (or equivalent) backend deployment.
+
+## Authentication
+
+The API does not require tokens or sessions. Wallet identity is asserted via a single HTTP header:
+
+```http
+x-user-address: bitcoincash:qr...
+```
+
+Any route that mutates state or builds a wallet-signed transaction requires this header. Routes that only read data (list/get) omit it safely.
+
+## WalletConnect Transactions
+
+Every write action returns a `wcTransaction` object rather than broadcasting directly. The frontend passes this to the connected wallet (Paytaca, Cashonize) via WalletConnect v2 using `bch_signTransaction`. After the wallet signs and broadcasts, the frontend calls the corresponding `confirm-*` endpoint with the resulting `txHash`.
+
+```json
+{
+  "wcTransaction": {
+    "transaction": "0200...",
+    "sourceOutputs": [...],
+    "broadcast": true,
+    "userPrompt": "Fund vesting stream"
+  }
+}
+```
+
+## Common Response Shape
+
+Successful responses always include `"success": true` at the top level:
+
+```json
+{
+  "success": true,
+  "stream": { ... }
+}
+```
+
+Errors return a non-2xx status with `"error"` and optionally `"message"`:
+
+```json
+{
+  "error": "Stream not found"
+}
+```
+
+## Lifecycle Pattern
+
+Every on-chain contract follows the same two-step lifecycle:
+
+<Steps>
+  <Step title="Build">
+    Call the action endpoint (e.g. `POST /api/streams/create`). The backend deploys a CashScript contract and returns a `wcTransaction` for the wallet to sign.
+  </Step>
+  <Step title="Confirm">
+    After the wallet broadcasts, call the corresponding `confirm-*` endpoint with `txHash`. The backend verifies the transaction on-chain and updates the database.
+  </Step>
+</Steps>
+
+## Status Values
+
+All covenant resources share the same status lifecycle:
+
+| Status | Meaning |
+|--------|---------|
+| `PENDING` | Contract deployed, awaiting funding |
+| `ACTIVE` | Funded and live on-chain |
+| `PAUSED` | Temporarily halted by authority |
+| `CANCELLED` | Terminated early, funds returned |
+| `COMPLETED` | All obligations fulfilled |
