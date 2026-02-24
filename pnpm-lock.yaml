@@ -27,8 +27,8 @@ importers:
         specifier: ^12.4.6
         version: 12.6.2
       cashscript:
-        specifier: ^0.10.5
-        version: 0.10.5
+        specifier: ^0.12.1
+        version: 0.12.1
       cors:
         specifier: ^2.8.5
         version: 2.8.6
@@ -403,6 +403,9 @@ packages:
 
   '@cashscript/utils@0.10.5':
     resolution: {integrity: sha512-5AJxZBIxyMArFYb/FUeMmkmij1AfSPdfBee8w3uRECiuRd7twhw8O+xf3iqIDBo1KYAPmpJtyNyGGMybr2dDEw==}
+
+  '@cashscript/utils@0.12.1':
+    resolution: {integrity: sha512-dGVbbFMUHZJFjmLkGQNrM0/hzoXlJgM8bYU1J5cX80Vo5n7dmopctmxplgXGd3u/h6hBUt3V7lTawGi8DBupJQ==}
 
   '@cashscript/utils@0.13.0-next.3':
     resolution: {integrity: sha512-fXZ4aDXi8gymMBn60j6tf4+cMCc9b28UYaGct7KHpaJJeE/fWKAg0cHLjzB/tihK+EgTcwe0GoWNkZsa9Oz2Xw==}
@@ -1858,6 +1861,9 @@ packages:
 
   cashscript@0.10.5:
     resolution: {integrity: sha512-YG0OkUGzMHTlqqJ559YIzpbDtMDjH+uExNT2MmKqa3zPfmu7/VbxwdBOLRFnlDaHh3bOMFUlke0XpnGzm30Q9Q==}
+
+  cashscript@0.12.1:
+    resolution: {integrity: sha512-IGKipstPw+/N+Nr5YyZf7LH89o32cmoMZFYZsEYQdOhMJQKp/m8lxkug8bPTm3oee+zzO4vYpDCbsBCaAhuj/A==}
 
   cashscript@0.13.0-next.3:
     resolution: {integrity: sha512-Lcw6fFxNje5+ZRN3AAdslaMDpfsNkuDXMd/pAOtne/jJFrsnK5EOZXf0k6D+evVzylTP8nAO/eAawAjcpAcPzg==}
@@ -4685,6 +4691,10 @@ snapshots:
     dependencies:
       '@bitauth/libauth': 3.0.0
 
+  '@cashscript/utils@0.12.1':
+    dependencies:
+      '@bitauth/libauth': 3.1.0-next.8
+
   '@cashscript/utils@0.13.0-next.3':
     dependencies:
       '@bitauth/libauth': 3.1.0-next.8
@@ -6458,6 +6468,19 @@ snapshots:
       electrum-cash: 2.0.10
       fast-deep-equal: 3.1.3
       pako: 2.1.0
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
+  cashscript@0.12.1:
+    dependencies:
+      '@bitauth/libauth': 3.1.0-next.8
+      '@cashscript/utils': 0.12.1
+      '@electrum-cash/network': 4.2.1
+      '@mr-zwets/bchn-api-wrapper': 1.0.2
+      pako: 2.1.0
+      semver: 7.7.3
     transitivePeerDependencies:
       - bufferutil
       - supports-color

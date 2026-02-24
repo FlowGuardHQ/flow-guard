@@ -3,6 +3,10 @@ node_modules/
 .pnp
 .pnp.js
 
+# Package manager lock conflicts (project uses pnpm)
+package-lock.json
+yarn.lock
+
 # Testing
 coverage/
 *.lcov
@@ -26,6 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+*.log
 
 # IDE
 .vscode/
@@ -34,11 +39,15 @@ lerna-debug.log*
 *.swo
 *~
 
+# AI / local tooling
+.claude/
+.gemini/
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Database
+# Database files
 *.db
 *.sqlite
 *.sqlite3
@@ -48,13 +57,15 @@ Thumbs.db
 *.cash.d.ts
 artifacts/
 
-# Temporary files
+# Temporary / backup files
 tmp/
 temp/
 *.tmp
+*.backup
+*.bak
+*.bak2
+*.bak3
 
-# Personal workflow and documentation files (except README)
-*.md
-!README.md
-!**/README.md
-
+# Deployment platform configs (use Railway, not Render)
+render.yaml
+fly.toml
