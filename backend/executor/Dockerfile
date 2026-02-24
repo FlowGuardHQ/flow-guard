@@ -4,11 +4,23 @@ WORKDIR /app
 
 RUN npm install -g pnpm
 
-COPY package.json pnpm-lock.yaml* ./
+COPY shared/package.json ./shared/package.json
+COPY shared/tsconfig.json ./shared/tsconfig.json
+COPY shared/ ./shared/
 
+COPY executor/package.json ./executor/package.json
+
+RUN printf '{"name":"flowguard","private":true,"version":"0.1.0"}' > package.json
+RUN printf '{"packages":["executor","shared"]}' > pnpm-workspace.yaml
+
+WORKDIR /app/shared
+RUN pnpm install --no-frozen-lockfile
+RUN pnpm build
+
+WORKDIR /app/executor
 RUN pnpm install --no-frozen-lockfile
 
-COPY . .
+COPY executor/ ./
 
 RUN pnpm build
 
