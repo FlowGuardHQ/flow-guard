@@ -18,7 +18,12 @@ import { useNetwork } from '../hooks/useNetwork';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { CircularProgress } from '../components/streams/CircularProgress';
-import { fundStreamContract, getExplorerTxUrl } from '../utils/blockchain';
+import {
+  deserializeWcSignOptions,
+  fundStreamContract,
+  getExplorerTxUrl,
+  type SerializedWcTransaction,
+} from '../utils/blockchain';
 
 interface Stream {
   id: string;
@@ -67,49 +72,26 @@ export default function StreamDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [funding, setFunding] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Fetch stream details
   useEffect(() => {
     const fetchStream = async () => {
       try {
         setLoading(true);
-        // TODO: Replace with actual API call
         const response = await fetch(`/api/streams/${id}`);
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ error: 'Failed to fetch stream' }));
+          throw new Error(error.error || 'Failed to fetch stream');
+        }
         const data = await response.json();
         setStream(data.stream);
         setClaims(data.claims || []);
       } catch (error) {
         console.error('Failed to fetch stream:', error);
-        // Mock data for development
-        setStream({
-          id: id!,
-          stream_id: '#FG-BCH-001',
-          vault_id: 'vault_123',
-          sender: 'bitcoincash:qr2x3uy3...xyz',
-          recipient: wallet.address || '',
-          token_type: 'BCH',
-          total_amount: 10.0,
-          withdrawn_amount: 2.5,
-          vested_amount: 5.0,
-          claimable_amount: 2.5,
-          progress_percentage: 50,
-          stream_type: 'LINEAR',
-          start_time: Math.floor(Date.now() / 1000) - 86400 * 15, // 15 days ago
-          end_time: Math.floor(Date.now() / 1000) + 86400 * 15, // 15 days from now
-          cliff_timestamp: Math.floor(Date.now() / 1000) - 86400 * 10,
-          cancelable: true,
-          transferable: false,
-          status: 'ACTIVE',
-          created_at: Math.floor(Date.now() / 1000) - 86400 * 15,
-        });
-        setClaims([
-          {
-            id: '1',
-            amount: 2.5,
-            claimed_at: Math.floor(Date.now() / 1000) - 86400 * 7,
-            tx_hash: '0x123...abc',
-          },
-        ]);
+        setLoadError(error instanceof Error ? error.message : 'Failed to load stream');
+        setStream(null);
+        setClaims([]);
       } finally {
         setLoading(false);
       }
@@ -130,51 +112,36 @@ export default function StreamDetailPage() {
     try {
       setClaiming(true);
 
-      // Get transaction descriptor from backend
-      const descriptorResponse = await fetch(`/api/streams/${stream.id}/claim`, {
+      const claimResponse = await fetch(`/api/streams/${stream.id}/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: stream.claimable_amount }),
+        body: JSON.stringify({ recipientAddress: wallet.address }),
       });
 
-      if (!descriptorResponse.ok) {
-        const errorData = await descriptorResponse.json();
+      if (!claimResponse.ok) {
+        const errorData = await claimResponse.json();
         throw new Error(errorData.error || 'Failed to create claim transaction');
       }
 
-      const { transaction: descriptor } = await descriptorResponse.json();
+      const { claimableAmount, wcTransaction } = await claimResponse.json() as {
+        success: boolean;
+        claimableAmount: number;
+        wcTransaction: SerializedWcTransaction;
+      };
 
-      // Build complete transaction using backend
-      const buildResponse = await fetch('/api/transactions/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptor }),
-      });
-
-      if (!buildResponse.ok) {
-        const errorData = await buildResponse.json();
-        throw new Error(errorData.error || 'Failed to build transaction');
-      }
-
-      const { transaction, sourceOutputs } = await buildResponse.json();
-
-      // Sign and broadcast with Paytaca
       const signResult = await wallet.signCashScriptTransaction({
-        transaction,
-        sourceOutputs,
-        broadcast: true,
-        userPrompt: `Claim ${stream.claimable_amount.toFixed(4)} BCH from stream ${stream.stream_id}`,
+        ...deserializeWcSignOptions(wcTransaction),
+        broadcast: wcTransaction.broadcast ?? true,
+        userPrompt: `Claim ${claimableAmount.toFixed(4)} BCH from stream ${stream.stream_id}`,
       });
 
-      console.log('Claim transaction signed and broadcast:', signResult.signedTransactionHash);
-
-      // Confirm claim with backend to update state
+      // Confirm claim with backend to record the txid and update withdrawn amount
       const confirmResponse = await fetch(`/api/streams/${stream.id}/confirm-claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           txHash: signResult.signedTransactionHash,
-          claimedAmount: stream.claimable_amount,
+          claimedAmount: claimableAmount,
         }),
       });
 
@@ -188,7 +155,7 @@ export default function StreamDetailPage() {
       setStream(streamData.stream);
       setClaims(streamData.claims || []);
 
-      alert(`Successfully claimed ${stream.claimable_amount.toFixed(4)} BCH!\nTx: ${signResult.signedTransactionHash}`);
+      alert(`Successfully claimed ${claimableAmount.toFixed(4)} BCH!\nTx: ${signResult.signedTransactionHash}`);
     } catch (error) {
       console.error('Claim failed:', error);
       alert(`Claim failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -203,6 +170,7 @@ export default function StreamDetailPage() {
       alert('Please connect your wallet first');
       return;
     }
+    const signerAddress = wallet.address ?? '';
 
     const confirmed = window.confirm(
       `Are you sure you want to cancel this stream?\n\n` +
@@ -216,40 +184,49 @@ export default function StreamDetailPage() {
       setCancelling(true);
 
       // Get transaction descriptor from backend
-      const descriptorResponse = await fetch(`/api/streams/${stream.id}/cancel`, {
+      const cancelResponse = await fetch(`/api/streams/${stream.id}/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sender: wallet.address }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-address': signerAddress,
+        },
+        body: JSON.stringify({}),
       });
 
-      if (!descriptorResponse.ok) {
-        const errorData = await descriptorResponse.json();
-        throw new Error(errorData.error || 'Failed to create cancel transaction');
+      if (!cancelResponse.ok) {
+        const errorData = await cancelResponse.json();
+        throw new Error(errorData.message || errorData.error || 'Failed to create cancel transaction');
       }
 
-      const { transaction: descriptor } = await descriptorResponse.json();
-
-      // Build complete transaction using backend
-      const buildResponse = await fetch('/api/transactions/build', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ descriptor }),
-      });
-
-      if (!buildResponse.ok) {
-        const errorData = await buildResponse.json();
-        throw new Error(errorData.error || 'Failed to build transaction');
+      const payload = await cancelResponse.json() as { wcTransaction?: SerializedWcTransaction };
+      if (!payload.wcTransaction) {
+        throw new Error(
+          'Cancel transaction signing is not wired yet for this stream type. ' +
+          'Backend must return a WalletConnect-compatible transaction object.',
+        );
       }
 
-      const { transaction, sourceOutputs } = await buildResponse.json();
-
-      // Sign and broadcast with Paytaca
       const signResult = await wallet.signCashScriptTransaction({
-        transaction,
-        sourceOutputs,
-        broadcast: true,
-        userPrompt: `Cancel stream ${stream.stream_id}`,
+        ...deserializeWcSignOptions(payload.wcTransaction),
+        broadcast: payload.wcTransaction.broadcast ?? true,
+        userPrompt: payload.wcTransaction.userPrompt ?? `Cancel stream ${stream.stream_id}`,
       });
+
+      const confirmResponse = await fetch(`/api/streams/${stream.id}/confirm-cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-address': signerAddress,
+        },
+        body: JSON.stringify({
+          txHash: signResult.signedTransactionHash,
+        }),
+      });
+
+      if (!confirmResponse.ok) {
+        const errorData = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm cancel' }));
+        throw new Error(errorData.message || errorData.error || 'Cancel transaction broadcast but confirmation failed');
+      }
 
       console.log('Cancel transaction signed and broadcast:', signResult.signedTransactionHash);
 
@@ -353,20 +330,18 @@ export default function StreamDetailPage() {
     );
   }
 
-  if (!stream) {
+  if (loadError || !stream) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Card className="p-12 text-center">
-          <AlertCircle className="w-16 h-16 text-textMuted mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-textPrimary mb-2">
-            Stream Not Found
-          </h3>
-          <p className="text-textSecondary mb-6">
-            The stream you're looking for doesn't exist or has been deleted.
+      <div className="max-w-6xl mx-auto px-6 py-8">
+        <Card padding="lg" className="border-red-200 bg-red-50/50">
+          <p className="font-mono text-sm text-red-700">
+            {loadError || 'Stream not found'}
           </p>
-          <Button onClick={() => navigate('/streams')}>
-            Back to Streams
-          </Button>
+          <div className="mt-4">
+            <Button variant="secondary" onClick={() => navigate('/streams')}>
+              Back to Streams
+            </Button>
+          </div>
         </Card>
       </div>
     );

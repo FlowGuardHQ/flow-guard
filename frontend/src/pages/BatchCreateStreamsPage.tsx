@@ -64,6 +64,9 @@ bitcoincash:qq3m9xt7...def,0.5,90,LINEAR,false`;
   };
 
   const parseCSV = (file: File) => {
+    const isValidCashAddr = (addr: string) =>
+      addr.startsWith('bitcoincash:') || addr.startsWith('bchtest:');
+
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -73,7 +76,7 @@ bitcoincash:qq3m9xt7...def,0.5,90,LINEAR,false`;
           let valid = true;
 
           // Validate address
-          if (!row.address || !row.address.startsWith('bitcoincash:')) {
+          if (!row.address || !isValidCashAddr(row.address)) {
             errors.push('Invalid BCH address format');
             valid = false;
           }

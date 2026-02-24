@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { fetchVault, fetchProposals, approveProposal } from '../utils/api';
-import { approveProposalOnChain, executePayoutOnChain, unlockCycleOnChain, getExplorerTxUrl } from '../utils/blockchain';
+import { fetchVault, fetchProposals } from '../utils/api';
+import { approveProposalOnChain, executePayoutOnChain, getExplorerTxUrl } from '../utils/blockchain';
 import { AddSignerModal } from '../components/vaults/AddSignerModal';
 import { useWallet } from '../hooks/useWallet';
 import { useNetwork } from '../hooks/useNetwork';
@@ -120,37 +120,14 @@ export default function VaultDetailPage() {
 
     try {
       setApprovingProposalId(proposalId);
-
-      // Try on-chain approval if vault has contract address and wallet is connected
-      if (vault?.contractAddress && wallet.isConnected && wallet.publicKey) {
-        try {
-          console.log('Attempting on-chain approval...');
-          const txid = await approveProposalOnChain(
-            wallet,
-            proposalId,
-            wallet.publicKey,
-            {
-              vaultId: id,
-              proposalId,
-            }
-          );
-          console.log('On-chain approval successful, txid:', txid);
-          alert(`SUCCESS: Approval Successful!\n\nYour signature has been broadcast to the BCH blockchain.\n\nTransaction ID: ${txid}\n\nView on explorer: ${getExplorerTxUrl(txid, network)}`);
-        } catch (onChainError: any) {
-          console.warn('On-chain approval failed, falling back to database:', onChainError);
-          // Fallback to database approval
-          await approveProposal(proposalId, wallet.address);
-          alert('SUCCESS: Approval recorded in database.\n\nNOTE: On-chain transaction failed. Approval saved locally.');
-        }
-      } else {
-        // No contract address or wallet not fully connected - use database approval
-        await approveProposal(proposalId, wallet.address);
-        alert(
-          'SUCCESS: Approval recorded in FlowGuard database only.\n\n' +
-          'No blockchain transaction was created for this approval. ' +
-          'Use on-chain approvals when you are ready to exercise full covenant security.'
-        );
-      }
+      await approveProposalOnChain(wallet, proposalId, wallet.publicKey || '', {
+        vaultId: id,
+        proposalId,
+      });
+      alert(
+        'SUCCESS: Approval recorded on-chain.\n\n' +
+        'Your signature was broadcast to chipnet and proposal state was updated.',
+      );
 
       // Reload proposals
       if (id) {
@@ -185,7 +162,7 @@ export default function VaultDetailPage() {
       return;
     }
 
-    if (!wallet.isConnected || !wallet.publicKey) {
+    if (!wallet.isConnected) {
       alert('WARNING: Wallet not fully connected\n\nPlease reconnect your wallet and try again.');
       return;
     }
@@ -194,7 +171,7 @@ export default function VaultDetailPage() {
     const confirmed = confirm(
       'EXECUTE PAYOUT?\n\n' +
       'This will broadcast a multi-signature transaction to the BCH blockchain.\n\n' +
-      `• ${vault.approvalThreshold} signers must sign this transaction\n` +
+      '• 2 vault signers must sign this transaction (current covenant requirement)\n' +
       '• Funds will be sent from the contract to the recipient\n' +
       '• This action cannot be undone\n\n' +
       'Do you want to continue?'
@@ -209,19 +186,30 @@ export default function VaultDetailPage() {
       console.log('Attempting on-chain payout execution...');
 
       const proposal = proposals.find(p => p.id === proposalId);
-      const txid = await executePayoutOnChain(wallet, proposalId, {
+      const executeResult = await executePayoutOnChain(wallet, proposalId, {
         vaultId: id,
         proposalId,
         amount: proposal?.amount,
         toAddress: proposal?.recipient,
       });
 
+      if (executeResult.status === 'pending') {
+        alert(
+          `SIGNATURE RECORDED\n\n` +
+          `Your execution signature has been stored.\n` +
+          `Collected: ${executeResult.signaturesCollected}/${executeResult.requiredSignatures}\n\n` +
+          `Another signer must submit the next signature to broadcast this payout.`,
+        );
+        return;
+      }
+
+      const txid = executeResult.txid || '';
       console.log('On-chain payout execution successful, txid:', txid);
       alert(
         `SUCCESS: Payout Executed Successfully!\n\n` +
         `Funds have been sent from the vault contract to the recipient.\n\n` +
         `Transaction ID: ${txid}\n\n` +
-        `View on explorer: ${getExplorerTxUrl(txid, network)}`
+        `View on explorer: ${getExplorerTxUrl(txid, network)}`,
       );
 
       // Reload proposals to show updated status
@@ -240,25 +228,32 @@ export default function VaultDetailPage() {
       console.error('Payout execution failed:', err);
       // Provide more specific error messages for covenant validation failures
       let userFriendlyMsg = errorMsg;
-      if (errorMsg.includes('not approved') || errorMsg.includes('state')) {
+      const isWiringGap = /not wired|disabled|not available|descriptor-era/i.test(errorMsg);
+      if (isWiringGap) {
+        userFriendlyMsg = 'Treasury payout execution is not wired yet for this vault flow. A multi-signer WC execution coordinator is still required.';
+      } else if (errorMsg.includes('not approved') || errorMsg.includes('state')) {
         userFriendlyMsg = 'Proposal state validation failed. The proposal must be approved on-chain before execution.';
       } else if (errorMsg.includes('threshold') || errorMsg.includes('signatures')) {
-        userFriendlyMsg = `Insufficient signatures. This payout requires ${vault.approvalThreshold} signer approvals.`;
+        userFriendlyMsg = 'Insufficient signatures. This payout requires signatures from two vault signers.';
       } else if (errorMsg.includes('spending cap') || errorMsg.includes('exceeds')) {
         userFriendlyMsg = 'Amount exceeds the vault spending cap. Please adjust the proposal amount.';
       } else if (errorMsg.includes('network') || errorMsg.includes('connection')) {
         userFriendlyMsg = 'Network connection error. Please check your internet connection and try again.';
       }
-      alert(
-        `ERROR: Payout Execution Failed\n\n` +
-        `${userFriendlyMsg}\n\n` +
-        `Possible reasons:\n` +
-        `• Insufficient approvals (requires ${vault.approvalThreshold} signers)\n` +
-        `• Proposal not approved on-chain\n` +
-        `• Wallet signature rejected\n` +
-        `• Network error\n\n` +
-        `Please check the proposal status and try again.`
-      );
+      if (isWiringGap) {
+        alert(`ERROR: Payout Execution Failed\n\n${userFriendlyMsg}`);
+      } else {
+        alert(
+          `ERROR: Payout Execution Failed\n\n` +
+          `${userFriendlyMsg}\n\n` +
+          `Possible reasons:\n` +
+          `• Missing signatures from required signer pair\n` +
+          `• Proposal not approved on-chain\n` +
+          `• Wallet signature rejected\n` +
+          `• Network error\n\n` +
+          `Please check the proposal status and try again.`
+        );
+      }
     } finally {
       setExecutingProposalId(null);
     }
@@ -270,12 +265,7 @@ export default function VaultDetailPage() {
       return;
     }
 
-    if (!vault?.contractAddress) {
-      alert('ERROR: Cannot unlock cycle\n\nThis vault does not have an on-chain contract address.');
-      return;
-    }
-
-    if (!wallet.isConnected || !wallet.publicKey) {
+    if (!wallet.isConnected) {
       alert('WARNING: Wallet not fully connected\n\nPlease reconnect your wallet and try again.');
       return;
     }
@@ -288,11 +278,10 @@ export default function VaultDetailPage() {
     // Confirm with user before unlocking
     const confirmed = confirm(
       'UNLOCK CYCLE?\n\n' +
-      'This will broadcast a multi-signature transaction to the BCH blockchain.\n\n' +
+      'This updates cycle availability for the current treasury policy.\n\n' +
       `• Cycle #${cycleNumber} will be unlocked\n` +
       `• ${vault.unlockAmount || 0} BCH will become available\n` +
-      `• ${vault.approvalThreshold} signers must sign this transaction\n` +
-      '• This action cannot be undone\n\n' +
+      `• Only a designated signer can perform this action\n\n` +
       'Do you want to continue?'
     );
 
@@ -302,20 +291,26 @@ export default function VaultDetailPage() {
 
     try {
       setUnlockingCycle(cycleNumber);
-      console.log('Attempting on-chain cycle unlock...');
+      console.log('Attempting cycle unlock...');
 
-      const txid = await unlockCycleOnChain(wallet, id, cycleNumber, wallet.publicKey, {
-        vaultId: id,
-        amount: vault?.unlockAmount,
+      const response = await fetch(`/api/vaults/${id}/unlock`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-address': wallet.address,
+        },
+        body: JSON.stringify({ cycleNumber }),
       });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to unlock cycle');
+      }
 
-      console.log('On-chain cycle unlock successful, txid:', txid);
+      console.log('Cycle unlock successful');
       alert(
         `SUCCESS: Cycle Unlocked Successfully!\n\n` +
-        `Cycle #${cycleNumber} has been unlocked on the blockchain.\n` +
-        `${vault.unlockAmount || 0} BCH is now available for spending.\n\n` +
-        `Transaction ID: ${txid}\n\n` +
-        `View on explorer: ${getExplorerTxUrl(txid, network)}`
+        `Cycle #${cycleNumber} has been unlocked.\n` +
+        `${vault.unlockAmount || 0} BCH is now available for spending.`,
       );
 
       // Reload vault to show updated balance and cycles
@@ -334,7 +329,6 @@ export default function VaultDetailPage() {
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to unlock cycle';
       console.error('Cycle unlock failed:', err);
-      // Provide more specific error messages for covenant validation failures
       let userFriendlyMsg = errorMsg;
       if (errorMsg.includes('cannot be unlocked') || errorMsg.includes('not eligible')) {
         userFriendlyMsg = `Cycle #${cycleNumber} is not yet eligible for unlock. Cycles unlock based on the vault's cycle duration.`;
@@ -350,11 +344,10 @@ export default function VaultDetailPage() {
         `${userFriendlyMsg}\n\n` +
         `Possible reasons:\n` +
         `• Cycle not yet eligible for unlock (check cycle duration)\n` +
-        `• Cycle already unlocked on-chain\n` +
-        `• Insufficient signer approvals\n` +
-        `• Wallet signature rejected\n` +
+        `• Cycle already unlocked\n` +
+        `• Unauthorized signer\n` +
         `• Network error\n\n` +
-        `Please check the cycle status and try again.`
+        `Please check the cycle status and try again.`,
       );
     } finally {
       setUnlockingCycle(null);

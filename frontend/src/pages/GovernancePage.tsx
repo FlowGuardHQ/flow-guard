@@ -282,15 +282,11 @@ export default function GovernancePage() {
 
     setVotingLoading(true);
     try {
-      // TODO: Get actual contract address and stake amount from user's vote record
-      const contractAddress = 'CONTRACT_ADDRESS_PLACEHOLDER';
-      const stakeAmountSat = 1000000; // Placeholder
-
       const txHash = await unlockVotingTokens(
         wallet,
         proposal.id,
-        contractAddress,
-        stakeAmountSat
+        '',
+        0
       );
 
       alert(`Tokens unlocked successfully!\n\nTransaction: ${txHash}`);

@@ -69,12 +69,14 @@ export default function CreateStreamPage() {
 
   const validate = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
+    const isValidCashAddr = (addr: string) =>
+      addr.startsWith('bitcoincash:') || addr.startsWith('bchtest:');
 
     // Recipient address
     if (!formData.recipient) {
       newErrors.recipient = 'Recipient address is required';
-    } else if (!formData.recipient.startsWith('bitcoincash:')) {
-      newErrors.recipient = 'Must be a valid BCH address (bitcoincash:...)';
+    } else if (!isValidCashAddr(formData.recipient)) {
+      newErrors.recipient = 'Must be a valid BCH address (bitcoincash:... or bchtest:...)';
     }
 
     // Token category for CashTokens
@@ -111,6 +113,18 @@ export default function CreateStreamPage() {
     e.preventDefault();
 
     if (!validate()) return;
+    if (!wallet.isConnected || !wallet.address) {
+      setErrors({
+        recipient: 'Please connect a wallet before creating and funding a stream.',
+      });
+      return;
+    }
+    if (!wallet.signCashScriptTransaction) {
+      setErrors({
+        recipient: 'Connected wallet does not support CashScript transactions.',
+      });
+      return;
+    }
 
     setIsCreating(true);
 

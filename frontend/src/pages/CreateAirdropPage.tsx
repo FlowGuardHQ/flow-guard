@@ -90,6 +90,14 @@ export default function CreateAirdropPage() {
     e.preventDefault();
 
     if (!validate()) return;
+    if (!wallet.isConnected || !wallet.address) {
+      setErrors({ title: 'Please connect your wallet first.' });
+      return;
+    }
+    if (!wallet.signCashScriptTransaction) {
+      setErrors({ title: 'Connected wallet does not support CashScript transactions.' });
+      return;
+    }
 
     setIsCreating(true);
 

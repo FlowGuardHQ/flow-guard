@@ -83,11 +83,14 @@ export default function CreateBudgetPlanPage() {
         planType: formData.planType,
         recipient: formData.recipient,
         recipientLabel: formData.recipientLabel || undefined,
+        recipientName: formData.recipientLabel || undefined,
         totalAmount: parseFloat(formData.totalAmount),
         intervalSeconds: parseInt(formData.intervalSeconds),
         amountPerInterval: parseFloat(formData.amountPerInterval),
         cliffSeconds: formData.cliffSeconds ? parseInt(formData.cliffSeconds) : 0,
-        startDate: formData.startDate ? new Date(formData.startDate) : undefined,
+        startDate: formData.startDate
+          ? Math.floor(new Date(formData.startDate).getTime() / 1000)
+          : undefined,
       };
 
       // Validate

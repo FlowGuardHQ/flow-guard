@@ -6,6 +6,7 @@ import { Input } from '../components/ui/Input';
 import { Textarea } from '../components/ui/Textarea';
 import { useWallet } from '../hooks/useWallet';
 import { createProposal } from '../utils/api';
+import { createProposalOnChain } from '../utils/blockchain';
 import { ChevronLeft, Send, AlertCircle } from 'lucide-react';
 
 export default function CreateProposalPage() {
@@ -71,7 +72,26 @@ export default function CreateProposalPage() {
         reason: formData.reason.trim(),
       };
 
-      await createProposal(id, proposalData, wallet.address);
+      const createdProposal = await createProposal(id, proposalData, wallet.address);
+
+      if (!wallet.signCashScriptTransaction) {
+        throw new Error(
+          'Connected wallet does not support CashScript signing. ' +
+          'Use Cashonize or a WalletConnect-compatible signer to create proposals on-chain.',
+        );
+      }
+
+      await createProposalOnChain(
+        wallet,
+        createdProposal.id,
+        wallet.publicKey || '',
+        {
+          vaultId: id,
+          proposalId: createdProposal.id,
+          amount: amountValue,
+          toAddress: recipient,
+        },
+      );
 
       // Navigate back to vault detail page
       navigate(`/vaults/${id}`);
@@ -194,4 +214,3 @@ export default function CreateProposalPage() {
     </div>
   );
 }
-

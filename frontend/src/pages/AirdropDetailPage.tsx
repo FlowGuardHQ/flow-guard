@@ -4,7 +4,13 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useWallet } from '../hooks/useWallet';
 import { useNetwork } from '../hooks/useNetwork';
-import { fundAirdropContract, claimAirdropFunds, getExplorerTxUrl } from '../utils/blockchain';
+import {
+  fundAirdropContract,
+  claimAirdropFunds,
+  pauseAirdropOnChain,
+  cancelAirdropOnChain,
+  getExplorerTxUrl,
+} from '../utils/blockchain';
 import {
   ChevronLeft,
   Gift,
@@ -95,14 +101,20 @@ export default function AirdropDetailPage() {
   };
 
   const handlePause = async () => {
+    if (!wallet.isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
     setActionLoading('pause');
     try {
-      await fetch(`/api/airdrops/${id}/pause`, {
-        method: 'POST',
-      });
-      setCampaign((prev: any) => ({ ...prev, status: 'PAUSED' }));
-    } catch (error) {
+      const txHash = await pauseAirdropOnChain(wallet, id!);
+      alert(`Campaign paused on-chain.\n\nTransaction: ${txHash}`);
+      const response = await fetch(`/api/airdrops/${id}`);
+      const data = await response.json();
+      setCampaign(data.campaign);
+    } catch (error: any) {
       console.error('Failed to pause campaign:', error);
+      alert(`Failed to pause campaign: ${error.message}`);
     } finally {
       setActionLoading(null);
     }
@@ -115,12 +127,15 @@ export default function AirdropDetailPage() {
 
     setActionLoading('cancel');
     try {
-      await fetch(`/api/airdrops/${id}/cancel`, {
-        method: 'POST',
-      });
+      if (!wallet.isConnected) {
+        throw new Error('Please connect your wallet first');
+      }
+      const txHash = await cancelAirdropOnChain(wallet, id!);
+      alert(`Campaign cancelled on-chain.\n\nTransaction: ${txHash}`);
       navigate('/airdrops');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to cancel campaign:', error);
+      alert(`Failed to cancel campaign: ${error.message}`);
       setActionLoading(null);
     }
   };
@@ -200,7 +215,7 @@ export default function AirdropDetailPage() {
     );
   }
 
-  const isCreator = wallet.address === campaign.creator;
+  const isCreator = String(wallet.address || '').toLowerCase() === String(campaign.creator || '').toLowerCase();
   const claimProgress = (campaign.claimed_count / campaign.total_recipients) * 100;
 
   return (

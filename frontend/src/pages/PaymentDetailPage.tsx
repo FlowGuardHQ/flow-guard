@@ -4,7 +4,14 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { useWallet } from '../hooks/useWallet';
 import { useNetwork } from '../hooks/useNetwork';
-import { fundPaymentContract, claimPaymentFunds, getExplorerTxUrl } from '../utils/blockchain';
+import {
+  fundPaymentContract,
+  claimPaymentFunds,
+  pausePaymentOnChain,
+  resumePaymentOnChain,
+  cancelPaymentOnChain,
+  getExplorerTxUrl,
+} from '../utils/blockchain';
 import {
   ChevronLeft,
   Repeat,
@@ -50,7 +57,7 @@ export default function PaymentDetailPage() {
     if (id) fetchPayment();
   }, [id]);
 
-  // Calculate claimable intervals
+  // RecurringPaymentCovenant.pay() permits exactly one interval per transaction.
   useEffect(() => {
     if (!payment || payment.status !== 'ACTIVE') {
       setClaimableIntervals(0);
@@ -59,42 +66,56 @@ export default function PaymentDetailPage() {
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const lastPaymentTime = payment.next_payment_date - payment.interval_seconds;
-    const elapsedTime = now - lastPaymentTime;
-    const intervals = Math.floor(elapsedTime / payment.interval_seconds);
+    const nextPaymentDate = Number(payment.next_payment_date || 0);
+    const endDate = Number(payment.end_date || 0);
+    const due = now >= nextPaymentDate;
+    const withinEnd = endDate <= 0 || nextPaymentDate <= endDate;
 
-    if (intervals > 0) {
-      setClaimableIntervals(intervals);
-      setClaimableAmount(intervals * payment.amount_per_period);
-    } else {
-      setClaimableIntervals(0);
-      setClaimableAmount(0);
+    if (due && withinEnd) {
+      setClaimableIntervals(1);
+      setClaimableAmount(Number(payment.amount_per_period || 0));
+      return;
     }
+
+    setClaimableIntervals(0);
+    setClaimableAmount(0);
   }, [payment]);
 
   const handlePause = async () => {
+    if (!wallet.isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
     setActionLoading('pause');
     try {
-      await fetch(`/api/payments/${id}/pause`, {
-        method: 'POST',
-      });
-      setPayment((prev: any) => ({ ...prev, status: 'PAUSED' }));
-    } catch (error) {
+      const txHash = await pausePaymentOnChain(wallet, id!);
+      alert(`Payment paused on-chain.\n\nTransaction: ${txHash}`);
+      const response = await fetch(`/api/payments/${id}`);
+      const data = await response.json();
+      setPayment(data.payment);
+    } catch (error: any) {
       console.error('Failed to pause payment:', error);
+      alert(`Failed to pause payment: ${error.message}`);
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleResume = async () => {
+    if (!wallet.isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
     setActionLoading('resume');
     try {
-      await fetch(`/api/payments/${id}/resume`, {
-        method: 'POST',
-      });
-      setPayment((prev: any) => ({ ...prev, status: 'ACTIVE' }));
-    } catch (error) {
+      const txHash = await resumePaymentOnChain(wallet, id!);
+      alert(`Payment resumed on-chain.\n\nTransaction: ${txHash}`);
+      const response = await fetch(`/api/payments/${id}`);
+      const data = await response.json();
+      setPayment(data.payment);
+    } catch (error: any) {
       console.error('Failed to resume payment:', error);
+      alert(`Failed to resume payment: ${error.message}`);
     } finally {
       setActionLoading(null);
     }
@@ -104,15 +125,19 @@ export default function PaymentDetailPage() {
     if (!confirm('Are you sure you want to cancel this recurring payment? This cannot be undone.')) {
       return;
     }
+    if (!wallet.isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
 
     setActionLoading('cancel');
     try {
-      await fetch(`/api/payments/${id}/cancel`, {
-        method: 'POST',
-      });
+      const txHash = await cancelPaymentOnChain(wallet, id!);
+      alert(`Payment cancelled on-chain.\n\nTransaction: ${txHash}`);
       navigate('/payments');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to cancel payment:', error);
+      alert(`Failed to cancel payment: ${error.message}`);
       setActionLoading(null);
     }
   };
@@ -245,7 +270,7 @@ export default function PaymentDetailPage() {
                   {actionLoading === 'claim'
                     ? 'Claiming...'
                     : claimableIntervals > 0
-                      ? `Claim ${claimableIntervals} Interval${claimableIntervals > 1 ? 's' : ''}`
+                      ? 'Claim Payment'
                       : 'No Claim Available'}
                 </Button>
               )}
@@ -300,7 +325,7 @@ export default function PaymentDetailPage() {
                   {claimableAmount.toFixed(4)} BCH
                 </p>
                 <p className="text-sm font-mono text-textMuted mt-1">
-                  {claimableIntervals} payment interval{claimableIntervals > 1 ? 's' : ''} ready
+                  1 payment interval ready
                 </p>
               </div>
               <Button

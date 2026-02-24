@@ -51,11 +51,13 @@ export default function CreatePaymentPage() {
 
   const validate = (): boolean => {
     const newErrors: Partial<Record<keyof FormData, string>> = {};
+    const isValidCashAddr = (addr: string) =>
+      addr.startsWith('bitcoincash:') || addr.startsWith('bchtest:');
 
     if (!formData.recipient) {
       newErrors.recipient = 'Recipient address is required';
-    } else if (!formData.recipient.startsWith('bitcoincash:')) {
-      newErrors.recipient = 'Must be a valid BCH address (bitcoincash:...)';
+    } else if (!isValidCashAddr(formData.recipient)) {
+      newErrors.recipient = 'Must be a valid BCH address (bitcoincash:... or bchtest:...)';
     }
 
     if (formData.tokenType === 'FUNGIBLE_TOKEN' && !formData.tokenCategory) {
@@ -78,6 +80,14 @@ export default function CreatePaymentPage() {
     e.preventDefault();
 
     if (!validate()) return;
+    if (!wallet.isConnected || !wallet.address) {
+      setErrors({ recipient: 'Please connect your wallet first.' });
+      return;
+    }
+    if (!wallet.signCashScriptTransaction) {
+      setErrors({ recipient: 'Connected wallet does not support CashScript transactions.' });
+      return;
+    }
 
     setIsCreating(true);
 

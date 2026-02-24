@@ -5,10 +5,15 @@
 
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Clock, TrendingUp, Plus, Zap, Wallet, Download, X as CloseIcon } from 'lucide-react';
+import { Calendar, Clock, TrendingUp, Plus, Zap, Wallet, Download, Pause, X as CloseIcon } from 'lucide-react';
 import { fetchBudgetPlans } from '../utils/api';
 import { useWallet } from '../hooks/useWallet';
-import { fundBudgetPlan, releaseMilestone } from '../utils/blockchain';
+import {
+  fundBudgetPlan,
+  releaseMilestone,
+  pauseBudgetPlanOnChain,
+  cancelBudgetPlanOnChain,
+} from '../utils/blockchain';
 import { Button } from '../components/ui/Button';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { StatsCard } from '../components/shared/StatsCard';
@@ -18,6 +23,8 @@ type PlanType = 'RECURRING' | 'LINEAR_VESTING' | 'STEP_VESTING';
 
 interface BudgetPlan {
   id: string;
+  creator: string;
+  controllerAddress?: string | null;
   treasuryId: string;
   treasuryName: string;
   type: PlanType;
@@ -44,29 +51,34 @@ export default function BudgetPlansPage() {
   const [actionModal, setActionModal] = useState<{ open: boolean; plan: BudgetPlan | null }>({ open: false, plan: null });
   const [actionLoading, setActionLoading] = useState(false);
 
+  const transformPlan = (plan: any): BudgetPlan => ({
+    id: plan.id,
+    creator: plan.creator,
+    controllerAddress: plan.controllerAddress || null,
+    treasuryId: plan.vaultId,
+    treasuryName: plan.vaultName || plan.vaultId,
+    type: plan.planType as PlanType,
+    recipient: plan.recipient,
+    recipientLabel: plan.recipientLabel,
+    intervalSeconds: plan.intervalSeconds,
+    amountPerInterval: plan.amountPerInterval,
+    totalReleased: plan.totalReleased,
+    totalAmount: plan.totalAmount,
+    nextUnlock: plan.nextUnlock ? new Date(plan.nextUnlock) : undefined,
+    cliffDate: plan.cliffDate ? new Date(plan.cliffDate) : undefined,
+    status: plan.status as PlanStatus,
+  });
+
+  const reloadPlans = async () => {
+    const plans = await fetchBudgetPlans();
+    setBudgetPlans(plans.map(transformPlan));
+  };
+
   useEffect(() => {
     const loadBudgetPlans = async () => {
       try {
         setLoading(true);
-        const plans = await fetchBudgetPlans();
-
-        const transformedPlans = plans.map((plan: any) => ({
-          id: plan.id,
-          treasuryId: plan.vaultId,
-          treasuryName: plan.vaultName || plan.vaultId,
-          type: plan.planType as PlanType,
-          recipient: plan.recipient,
-          recipientLabel: plan.recipientLabel,
-          intervalSeconds: plan.intervalSeconds,
-          amountPerInterval: plan.amountPerInterval,
-          totalReleased: plan.totalReleased,
-          totalAmount: plan.totalAmount,
-          nextUnlock: plan.nextUnlock ? new Date(plan.nextUnlock) : undefined,
-          cliffDate: plan.cliffDate ? new Date(plan.cliffDate) : undefined,
-          status: plan.status as PlanStatus,
-        }));
-
-        setBudgetPlans(transformedPlans);
+        await reloadPlans();
       } catch (err: any) {
         console.error('Failed to load budget plans:', err);
       } finally {
@@ -274,25 +286,7 @@ export default function BudgetPlansPage() {
     try {
       const txHash = await fundBudgetPlan(wallet, actionModal.plan.id);
       alert(`Budget plan funded successfully!\n\nTransaction: ${txHash}`);
-
-      // Refresh plans
-      const plans = await fetchBudgetPlans();
-      const transformedPlans = plans.map((plan: any) => ({
-        id: plan.id,
-        treasuryId: plan.vaultId,
-        treasuryName: plan.vaultName || plan.vaultId,
-        type: plan.planType as PlanType,
-        recipient: plan.recipient,
-        recipientLabel: plan.recipientLabel,
-        intervalSeconds: plan.intervalSeconds,
-        amountPerInterval: plan.amountPerInterval,
-        totalReleased: plan.totalReleased,
-        totalAmount: plan.totalAmount,
-        nextUnlock: plan.nextUnlock ? new Date(plan.nextUnlock) : undefined,
-        cliffDate: plan.cliffDate ? new Date(plan.cliffDate) : undefined,
-        status: plan.status as PlanStatus,
-      }));
-      setBudgetPlans(transformedPlans);
+      await reloadPlans();
 
       setActionModal({ open: false, plan: null });
     } catch (error: any) {
@@ -313,30 +307,56 @@ export default function BudgetPlansPage() {
     try {
       const txHash = await releaseMilestone(wallet, actionModal.plan.id);
       alert(`Milestone released successfully!\n\nTransaction: ${txHash}`);
-
-      // Refresh plans
-      const plans = await fetchBudgetPlans();
-      const transformedPlans = plans.map((plan: any) => ({
-        id: plan.id,
-        treasuryId: plan.vaultId,
-        treasuryName: plan.vaultName || plan.vaultId,
-        type: plan.planType as PlanType,
-        recipient: plan.recipient,
-        recipientLabel: plan.recipientLabel,
-        intervalSeconds: plan.intervalSeconds,
-        amountPerInterval: plan.amountPerInterval,
-        totalReleased: plan.totalReleased,
-        totalAmount: plan.totalAmount,
-        nextUnlock: plan.nextUnlock ? new Date(plan.nextUnlock) : undefined,
-        cliffDate: plan.cliffDate ? new Date(plan.cliffDate) : undefined,
-        status: plan.status as PlanStatus,
-      }));
-      setBudgetPlans(transformedPlans);
+      await reloadPlans();
 
       setActionModal({ open: false, plan: null });
     } catch (error: any) {
       console.error('Failed to release milestone:', error);
       alert(`Failed to release milestone: ${error.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handlePause = async () => {
+    if (!wallet.isConnected || !actionModal.plan) {
+      alert('Please connect your wallet');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const txHash = await pauseBudgetPlanOnChain(wallet, actionModal.plan.id);
+      alert(`Budget plan paused on-chain.\n\nTransaction: ${txHash}`);
+      await reloadPlans();
+      setActionModal({ open: false, plan: null });
+    } catch (error: any) {
+      console.error('Failed to pause budget plan:', error);
+      alert(`Failed to pause budget plan: ${error.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!actionModal.plan) return;
+    if (!confirm('Are you sure you want to cancel this budget plan?')) {
+      return;
+    }
+    if (!wallet.isConnected) {
+      alert('Please connect your wallet');
+      return;
+    }
+
+    setActionLoading(true);
+    try {
+      const txHash = await cancelBudgetPlanOnChain(wallet, actionModal.plan.id);
+      alert(`Budget plan cancelled on-chain.\n\nTransaction: ${txHash}`);
+      await reloadPlans();
+      setActionModal({ open: false, plan: null });
+    } catch (error: any) {
+      console.error('Failed to cancel budget plan:', error);
+      alert(`Failed to cancel budget plan: ${error.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -539,43 +559,78 @@ export default function BudgetPlansPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3">
-                {actionModal.plan.status === 'PENDING' && wallet.isConnected && (
-                  <Button
-                    variant="primary"
-                    onClick={handleFund}
-                    disabled={actionLoading}
-                    className="flex-1 flex items-center justify-center gap-2"
-                  >
-                    <Wallet className="w-4 h-4" />
-                    {actionLoading ? 'Funding...' : 'Fund Budget Plan'}
-                  </Button>
-                )}
+              {(() => {
+                const controllerAddress = actionModal.plan?.controllerAddress || actionModal.plan?.creator;
+                const canControl = Boolean(
+                  wallet.isConnected &&
+                  wallet.address &&
+                  controllerAddress &&
+                  wallet.address.toLowerCase() === controllerAddress.toLowerCase(),
+                );
 
-                {actionModal.plan.status === 'ACTIVE' &&
-                 wallet.isConnected &&
-                 wallet.address === actionModal.plan.recipient &&
-                 actionModal.plan.nextUnlock &&
-                 actionModal.plan.nextUnlock.getTime() <= Date.now() && (
-                  <Button
-                    variant="primary"
-                    onClick={handleRelease}
-                    disabled={actionLoading}
-                    className="flex-1 flex items-center justify-center gap-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    {actionLoading ? 'Releasing...' : 'Release Milestone'}
-                  </Button>
-                )}
+                return (
+                  <div className="flex gap-3">
+                    {actionModal.plan.status === 'PENDING' && wallet.isConnected && (
+                      <Button
+                        variant="primary"
+                        onClick={handleFund}
+                        disabled={actionLoading}
+                        className="flex-1 flex items-center justify-center gap-2"
+                      >
+                        <Wallet className="w-4 h-4" />
+                        {actionLoading ? 'Funding...' : 'Fund Budget Plan'}
+                      </Button>
+                    )}
 
-                <Button
-                  variant="outline"
-                  onClick={() => setActionModal({ open: false, plan: null })}
-                  disabled={actionLoading}
-                >
-                  Close
-                </Button>
-              </div>
+                    {actionModal.plan.status === 'ACTIVE' && canControl && (
+                      <Button
+                        variant="outline"
+                        onClick={handlePause}
+                        disabled={actionLoading}
+                        className="flex-1 flex items-center justify-center gap-2"
+                      >
+                        <Pause className="w-4 h-4" />
+                        {actionLoading ? 'Pausing...' : 'Pause'}
+                      </Button>
+                    )}
+
+                    {(actionModal.plan.status === 'ACTIVE' || actionModal.plan.status === 'PAUSED') && canControl && (
+                      <Button
+                        variant="outline"
+                        onClick={handleCancel}
+                        disabled={actionLoading}
+                        className="flex-1 flex items-center justify-center gap-2 text-error border-error hover:bg-error/5"
+                      >
+                        {actionLoading ? 'Cancelling...' : 'Cancel'}
+                      </Button>
+                    )}
+
+                    {actionModal.plan.status === 'ACTIVE' &&
+                     wallet.isConnected &&
+                     wallet.address === actionModal.plan.recipient &&
+                     actionModal.plan.nextUnlock &&
+                     actionModal.plan.nextUnlock.getTime() <= Date.now() && (
+                      <Button
+                        variant="primary"
+                        onClick={handleRelease}
+                        disabled={actionLoading}
+                        className="flex-1 flex items-center justify-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        {actionLoading ? 'Releasing...' : 'Release Milestone'}
+                      </Button>
+                    )}
+
+                    <Button
+                      variant="outline"
+                      onClick={() => setActionModal({ open: false, plan: null })}
+                      disabled={actionLoading}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                );
+              })()}
 
               {/* Info Messages */}
               {actionModal.plan.status === 'PENDING' && (

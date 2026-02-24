@@ -46,9 +46,9 @@ export default function Home() {
           </motion.div>
           <div className="hidden md:flex items-center space-x-10">
             <SolutionsDropdown />
-            <Link to="/developers" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
+            <a href="https://docs.flowguard.cash" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
               Developers
-            </Link>
+            </a>
             <a href="#security" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">Security</a>
             <ResourcesDropdown />
             <Link to="/vaults">
@@ -525,12 +525,12 @@ export default function Home() {
             viewport={{ once: true }}
             className="text-center mt-12"
           >
-            <Link to="/security">
+            <a href="https://docs.flowguard.cash/security" target="_blank" rel="noopener noreferrer">
               <button className="text-primary hover:text-primaryHover font-semibold inline-flex items-center gap-2 group">
                 Learn more about security
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
-            </Link>
+            </a>
           </motion.div>
         </div>
       </section>

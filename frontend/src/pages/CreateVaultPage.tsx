@@ -174,7 +174,8 @@ export default function CreateVaultPage() {
             wallet,
             newVault.contractAddress,
             vaultData.totalDeposit,
-            wallet.walletType === 'mainnet' ? confirmTransaction : undefined
+            wallet.walletType === 'mainnet' ? confirmTransaction : undefined,
+            newVault.id,
           );
 
           setTxid(depositTxid);
@@ -587,4 +588,3 @@ export default function CreateVaultPage() {
     </>
   );
 }
-
