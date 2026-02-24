@@ -14,6 +14,7 @@
  * - Returns unsigned transaction hex (executor signs to claim fee)
  */
 
+import { createHash } from 'node:crypto';
 import { ElectrumNetworkProvider, Contract, SignatureTemplate } from 'cashscript';
 import {
   ScheduleUTXO,
@@ -571,7 +572,7 @@ export class TransactionBuilder {
     }
 
     const combined = Buffer.concat(buffers);
-    return Buffer.from(require('crypto').createHash('sha256').update(combined).digest());
+    return Buffer.from(createHash('sha256').update(combined).digest());
   }
 }
 

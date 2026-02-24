@@ -656,7 +656,8 @@ export class FlowGuardIndexer {
 /**
  * CLI Entry Point
  */
-if (require.main === module) {
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/.*\//, ''));
+if (isMain) {
   const config: IndexerConfig = {
     databaseUrl: process.env.DATABASE_URL || 'postgresql://localhost:5432/flowguard',
     network: (process.env.NETWORK as 'mainnet' | 'chipnet') || 'chipnet',

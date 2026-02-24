@@ -31,7 +31,7 @@ import {
   ScheduleType,
   ProposalStatus,
 } from '@flowguard/shared/types';
-import { TransactionBuilder, TxBuilderConfig } from './services/TransactionBuilder';
+import { TransactionBuilder, TxBuilderConfig } from './services/TransactionBuilder.js';
 
 /**
  * Executor Configuration
@@ -382,7 +382,8 @@ export class FlowGuardExecutor {
 /**
  * CLI Entry Point
  */
-if (require.main === module) {
+const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/.*\//, ''));
+if (isMain) {
   const config: ExecutorConfig = {
     databaseUrl: process.env.DATABASE_URL || 'postgresql://localhost:5432/flowguard',
     network: (process.env.NETWORK as 'mainnet' | 'chipnet') || 'chipnet',
