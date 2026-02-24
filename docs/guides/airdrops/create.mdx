@@ -10,13 +10,13 @@ icon: "parachute-box"
   </Step>
   <Step title="Configure the campaign">
     Fill in the campaign details:
-    - **Title** — public campaign name
-    - **Token** — BCH or a CashToken (requires the 32-byte `tokenCategory` hex)
-    - **Total amount** — full pool to distribute
-    - **Amount per claim** — how much each wallet receives per claim
-    - **Max claims per address** — defaults to 1
-    - **Start / End dates** — optional claim window
-    - **KYC restricted** — enable to require a recipient whitelist
+    - **Title**: public campaign name
+    - **Token**: BCH or a CashToken (requires the 32-byte `tokenCategory` hex)
+    - **Total amount**: full pool to distribute
+    - **Amount per claim**: how much each wallet receives per claim
+    - **Max claims per address**: defaults to 1
+    - **Start / End dates**: optional claim window
+    - **KYC restricted**: enable to require a recipient whitelist
   </Step>
   <Step title="Generate merkle tree (KYC only)">
     If KYC is enabled, upload a CSV with `address,amount` rows. The app POSTs to `POST /api/airdrops/:id/generate-merkle` and stores the merkle root in the contract.

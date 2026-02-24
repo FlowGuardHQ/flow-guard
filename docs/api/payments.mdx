@@ -33,8 +33,8 @@ Deploys the RecurringPaymentCovenant on-chain. Stores `status: PENDING` until fu
 **Body**
 ```json
 {
-  "sender": "bitcoincash:qr...",
-  "recipient": "bitcoincash:qs...",
+  "sender": "bchtest:qr...",
+  "recipient": "bchtest:qs...",
   "recipientName": "Alice",
   "tokenType": "BCH",
   "amountPerPeriod": 0.1,
@@ -55,7 +55,7 @@ Valid values for `interval`: `DAILY`, `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `YEARLY`.
   "success": true,
   "payment": { "id": "...", "status": "PENDING", "payment_id": "#FG-PAY-001", ... },
   "deployment": {
-    "contractAddress": "bitcoincash:p...",
+    "contractAddress": "bchtest:p...",
     "paymentId": "#FG-PAY-001",
     "fundingRequired": true,
     "cancelable": true
@@ -86,7 +86,7 @@ Verifies on-chain and activates the payment contract.
 ```http
 POST /api/payments/:id/claim
 
-{ "recipientAddress": "bitcoincash:qs..." }
+{ "recipientAddress": "bchtest:qs..." }
 ```
 
 Builds the claim `wcTransaction`. Computes how many intervals are claimable since `nextPaymentDate`. Only the registered recipient can claim.
@@ -119,7 +119,7 @@ Updates `total_paid`, `payment_count`, and `next_payment_date`. Records executio
 
 ```http
 POST /api/payments/:id/pause
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Sender-only. Returns `wcTransaction` to pause. Confirm with `POST /api/payments/:id/confirm-pause`.
@@ -128,7 +128,7 @@ Sender-only. Returns `wcTransaction` to pause. Confirm with `POST /api/payments/
 
 ```http
 POST /api/payments/:id/resume
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Sender-only. Resumes from `PAUSED`. Confirm with `POST /api/payments/:id/confirm-resume`. Updates `next_payment_date` to `now + intervalSeconds`.
@@ -137,7 +137,7 @@ Sender-only. Resumes from `PAUSED`. Confirm with `POST /api/payments/:id/confirm
 
 ```http
 POST /api/payments/:id/cancel
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Sender-only. Returns `wcTransaction` to cancel — unfunded periods are returned to sender. Confirm with `POST /api/payments/:id/confirm-cancel`.

@@ -10,7 +10,7 @@ Budget plans (also called grant plans) release funds to a recipient in discrete 
 
 ```http
 POST /api/vaults/:vaultId/budget-plans
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Deploys the BudgetCovenant on-chain and stores `status: PENDING`.
@@ -18,7 +18,7 @@ Deploys the BudgetCovenant on-chain and stores `status: PENDING`.
 **Body (milestone array)**
 ```json
 {
-  "recipient": "bitcoincash:qs...",
+  "recipient": "bchtest:qs...",
   "recipientName": "Builder Inc.",
   "tokenType": "BCH",
   "cancelable": true,
@@ -34,7 +34,7 @@ Deploys the BudgetCovenant on-chain and stores `status: PENDING`.
 **Body (legacy interval format)**
 ```json
 {
-  "recipient": "bitcoincash:qs...",
+  "recipient": "bchtest:qs...",
   "tokenType": "BCH",
   "totalAmount": 4,
   "amountPerInterval": 1,
@@ -49,7 +49,7 @@ Deploys the BudgetCovenant on-chain and stores `status: PENDING`.
   "success": true,
   "plan": { "id": "...", "status": "PENDING", ... },
   "deployment": {
-    "contractAddress": "bitcoincash:p...",
+    "contractAddress": "bchtest:p...",
     "budgetId": "hex32",
     "fundingRequired": true
   }
@@ -80,7 +80,7 @@ Returns the plan with its `milestones` and `releases` arrays.
 
 ```http
 GET /api/budget-plans/:id/funding-info
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Returns the unsigned `wcTransaction` to fund the total budget amount upfront.
@@ -100,7 +100,7 @@ Activates the budget plan after verifying the contract output on-chain.
 ```http
 POST /api/budget-plans/:id/release
 
-{ "recipientAddress": "bitcoincash:qs..." }
+{ "recipientAddress": "bchtest:qs..." }
 ```
 
 Recipient-only. Builds the release `wcTransaction` for the elapsed milestones. Returns `releasableAmount` and `milestonesReleasable`.
@@ -129,7 +129,7 @@ Verifies recipient output on-chain, advances `current_milestone`, and records th
 
 ```http
 POST /api/budget-plans/:id/pause
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Controller-only (the address whose hash is stored in `constructor_params[1]`). Confirm with `POST /api/budget-plans/:id/confirm-pause`.
@@ -138,7 +138,7 @@ Controller-only (the address whose hash is stored in `constructor_params[1]`). C
 
 ```http
 POST /api/budget-plans/:id/cancel
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Controller-only. Active or paused plans only. Returns `vestedAmount`, `unvestedAmount`, and the cancel `wcTransaction`. Unvested funds return to the controller address. Confirm with `POST /api/budget-plans/:id/confirm-cancel`.

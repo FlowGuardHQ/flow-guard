@@ -34,10 +34,10 @@ Returns a single proposal with approval list, amounts, and status.
 
 ```http
 POST /api/vaults/:vaultId/proposals
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 {
-  "recipient": "bitcoincash:qs...",
+  "recipient": "bchtest:qs...",
   "amount": 2.5,
   "reason": "Quarterly contractor payout"
 }
@@ -49,7 +49,7 @@ Creates a `pending` proposal record in the database. No on-chain transaction yet
 
 ```http
 POST /api/proposals/:id/create-onchain
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Deploys the ProposalCovenant on-chain with the payout parameters, returns a `wcTransaction` for the proposer to sign and fund.
@@ -58,7 +58,7 @@ Deploys the ProposalCovenant on-chain with the payout parameters, returns a `wcT
 ```json
 {
   "success": true,
-  "proposalContractAddress": "bitcoincash:p...",
+  "proposalContractAddress": "bchtest:p...",
   "tokenCategory": "hex32",
   "fundingSatoshis": "250000000",
   "wcTransaction": { ... }
@@ -79,7 +79,7 @@ Verifies the covenant state NFT output exists on-chain and transitions the propo
 
 ```http
 POST /api/proposals/:id/approve-onchain
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Builds the approval `wcTransaction` for one of the 3 signers. Each signer must call this and sign independently.
@@ -88,7 +88,7 @@ Builds the approval `wcTransaction` for one of the 3 signers. Each signer must c
 ```json
 {
   "success": true,
-  "proposalContractAddress": "bitcoincash:p...",
+  "proposalContractAddress": "bchtest:p...",
   "newApprovalCount": 1,
   "isApproved": false,
   "wcTransaction": { ... }
@@ -99,7 +99,7 @@ Builds the approval `wcTransaction` for one of the 3 signers. Each signer must c
 
 ```http
 POST /api/proposals/:id/confirm-approval
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 { "txHash": "hex64" }
 ```
@@ -110,7 +110,7 @@ Records the signer's approval. When `approvalCount` reaches 2, the proposal stat
 
 ```http
 POST /api/proposals/:id/execute
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Vault signer initiates the 2-of-2 payout signing session. Returns a `wcTransaction` with `"broadcast": false` — the wallet must sign but not broadcast.
@@ -123,7 +123,7 @@ Vault signer initiates the 2-of-2 payout signing session. Returns a `wcTransacti
   "wcTransaction": { ..., "broadcast": false },
   "signaturesCollected": 0,
   "requiredSignatures": 2,
-  "requiredSignerAddresses": ["bitcoincash:q...", "bitcoincash:q..."],
+  "requiredSignerAddresses": ["bchtest:q...", "bchtest:q..."],
   "payoutSatoshis": "250000000"
 }
 ```
@@ -132,7 +132,7 @@ Vault signer initiates the 2-of-2 payout signing session. Returns a `wcTransacti
 
 ```http
 POST /api/proposals/:id/execute-signature
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 {
   "sessionId": "...",

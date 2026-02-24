@@ -18,7 +18,7 @@ Returns all governance proposals for the vault. Optionally filter by `status`.
 
 ```http
 POST /api/vaults/:vaultId/governance
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 {
   "title": "Increase executor reward to 0.01 BCH",
@@ -57,7 +57,7 @@ Returns the proposal with full vote breakdown (all `governance_votes` rows).
 
 ```http
 POST /api/governance/:proposalId/vote
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 {
   "vote": "FOR",
@@ -77,7 +77,7 @@ For the full on-chain token-lock flow, use `/lock` and `/confirm-lock` instead.
 POST /api/governance/:proposalId/lock
 
 {
-  "voterAddress": "bitcoincash:qr...",
+  "voterAddress": "bchtest:qr...",
   "voteChoice": "FOR",
   "stakeAmount": 1000,
   "tokenCategory": "hex32"
@@ -91,7 +91,7 @@ Deploys a VoteLockCovenant and returns a `wcTransaction` for the voter to sign a
 {
   "success": true,
   "deployment": {
-    "contractAddress": "bitcoincash:p...",
+    "contractAddress": "bchtest:p...",
     "voteId": "hex32",
     "constructorParams": [...],
     "initialCommitment": "hex..."
@@ -106,11 +106,11 @@ Deploys a VoteLockCovenant and returns a `wcTransaction` for the voter to sign a
 POST /api/governance/:proposalId/confirm-lock
 
 {
-  "voterAddress": "bitcoincash:q...",
+  "voterAddress": "bchtest:q...",
   "voteChoice": "FOR",
   "weight": 1000,
   "txHash": "hex64",
-  "contractAddress": "bitcoincash:p...",
+  "contractAddress": "bchtest:p...",
   "voteId": "hex32",
   "constructorParams": [...],
   "nftCommitment": "hex..."
@@ -125,7 +125,7 @@ Verifies the vote-lock covenant output on-chain, records the vote in the databas
 POST /api/governance/:proposalId/unlock
 
 {
-  "voterAddress": "bitcoincash:q...",
+  "voterAddress": "bchtest:q...",
   "tokenCategory": "hex32"
 }
 ```
@@ -149,7 +149,7 @@ Builds the unlock `wcTransaction` after the voting period ends. Uses the stored 
 POST /api/governance/:proposalId/confirm-unlock
 
 {
-  "voterAddress": "bitcoincash:q...",
+  "voterAddress": "bchtest:q...",
   "txHash": "hex64"
 }
 ```

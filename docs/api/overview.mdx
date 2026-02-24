@@ -19,7 +19,7 @@ In production this points to your Railway (or equivalent) backend deployment.
 The API does not require tokens or sessions. Wallet identity is asserted via a single HTTP header:
 
 ```http
-x-user-address: bitcoincash:qr...
+x-user-address: bchtest:qr...
 ```
 
 Any route that mutates state or builds a wallet-signed transaction requires this header. Routes that only read data (list/get) omit it safely.

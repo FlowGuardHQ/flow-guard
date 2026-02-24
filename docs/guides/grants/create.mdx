@@ -13,16 +13,16 @@ icon: "chart-gantt"
   </Step>
   <Step title="Define milestones">
     Add one or more milestones. Each milestone has:
-    - **Amount** — BCH or token amount released at this milestone
-    - **Duration** — seconds from the previous milestone (or `startDate` for the first) before funds can be released
-    - **Description** — optional label (e.g. "Design phase", "Beta delivery")
+    - **Amount**: BCH or token amount released at this milestone
+    - **Duration**: seconds from the previous milestone (or `startDate` for the first) before funds can be released
+    - **Description**: optional label (e.g. "Design phase", "Beta delivery")
 
     The total grant amount is the sum of all milestone amounts.
   </Step>
   <Step title="Configure options">
-    - **Token** — BCH or CashToken (provide token category)
-    - **Cancelable** — whether unreleased milestones can be reclaimed by the controller
-    - **Start date** — Unix timestamp for when the first milestone clock begins
+    - **Token**: BCH or CashToken (provide token category)
+    - **Cancelable**: whether unreleased milestones can be reclaimed by the controller
+    - **Start date**: Unix timestamp for when the first milestone clock begins
   </Step>
   <Step title="Deploy and fund">
     Click **Create Grant**. The backend deploys the BudgetCovenant and returns a funding `wcTransaction`. Sign it in your wallet. After broadcasting, click **Confirm Funding** with the transaction hash.

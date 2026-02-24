@@ -24,8 +24,8 @@ icon: "arrows-rotate"
     | Total Pool | Max total payout. `0` = unlimited until cancelled. |
   </Step>
   <Step title="Set flags">
-    - **Cancelable** — allows sender to cancel and recover remaining pool
-    - **Asset** — BCH or CashToken
+    - **Cancelable**: allows sender to cancel and recover remaining pool
+    - **Asset**: BCH or CashToken
   </Step>
   <Step title="Fund and deploy">
     The vault funds the initial pool. Sign the deployment transaction. The payment appears in the dashboard and is immediately eligible for the executor to call `pay()` after `startTimestamp`.
@@ -44,8 +44,8 @@ Content-Type: application/json
 
 {
   "vaultId": "hex_32_bytes",
-  "senderAddress": "bitcoincash:q...",
-  "recipientAddress": "bitcoincash:q...",
+  "senderAddress": "bchtest:q...",
+  "recipientAddress": "bchtest:q...",
   "amountPerInterval": 500000,
   "intervalSeconds": 604800,
   "totalAmount": 26000000,

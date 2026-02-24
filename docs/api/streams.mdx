@@ -48,7 +48,7 @@ Returns the stream record plus its full claim history.
 
 ```http
 POST /api/streams/create
-x-user-address: bitcoincash:qr...
+x-user-address: bchtest:qr...
 ```
 
 Deploys the CashScript covenant on-chain and stores `status: PENDING`. Fund the returned contract address to activate.
@@ -56,8 +56,8 @@ Deploys the CashScript covenant on-chain and stores `status: PENDING`. Fund the 
 **Body**
 ```json
 {
-  "sender": "bitcoincash:qr...",
-  "recipient": "bitcoincash:qs...",
+  "sender": "bchtest:qr...",
+  "recipient": "bchtest:qs...",
   "tokenType": "BCH",
   "totalAmount": 10,
   "streamType": "LINEAR",
@@ -78,7 +78,7 @@ For `FUNGIBLE_TOKEN` streams, also include `"tokenCategory": "hex32"`.
   "success": true,
   "stream": { "id": "...", "status": "PENDING", ... },
   "deployment": {
-    "contractAddress": "bitcoincash:p...",
+    "contractAddress": "bchtest:p...",
     "fundingRequired": true,
     "nftCommitment": "hex..."
   }
@@ -120,9 +120,9 @@ Returns the currently claimable amount and the unsigned `wcTransaction`. Only wo
 
 ```http
 POST /api/streams/:id/claim
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
-{ "recipientAddress": "bitcoincash:qs..." }
+{ "recipientAddress": "bchtest:qs..." }
 ```
 
 Builds and returns the claim `wcTransaction`. Only the stream recipient can call this.
@@ -141,9 +141,9 @@ Updates `withdrawn_amount` and records the claim in `stream_claims`.
 
 ```http
 POST /api/streams/:id/cancel
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
-{ "sender": "bitcoincash:qr..." }
+{ "sender": "bchtest:qr..." }
 ```
 
 Only the stream sender can cancel, and only if `cancelable: true` and `status: ACTIVE`. Returns the cancel `wcTransaction` which splits vested and unvested amounts.

@@ -26,10 +26,10 @@ flowchart LR
     Go to **Vault → Proposals → Create Proposal**, or navigate to your vault and click **New Proposal**.
   </Step>
   <Step title="Define payout details">
-    - **Recipient** — BCH P2PKH address that will receive funds
-    - **Payout Amount** — satoshis to transfer
-    - **Voting Deadline** — timestamp after which the proposal expires if quorum is not reached
-    - **Execution Timelock** — minimum wait after approval before execution
+    - **Recipient**: BCH P2PKH address that will receive funds
+    - **Payout Amount**: satoshis to transfer
+    - **Voting Deadline**: timestamp after which the proposal expires if quorum is not reached
+    - **Execution Timelock**: minimum wait after approval before execution
   </Step>
   <Step title="Submit">
     Sign and broadcast. The proposal NFT UTXO is created on-chain. Signers can now visit the proposal to approve.
@@ -56,7 +56,7 @@ M-of-N signers can cancel at any point while status is PENDING or APPROVED. Canc
 POST /api/proposals
 {
   "vaultId": "hex_32_bytes",
-  "recipientAddress": "bitcoincash:q...",
+  "recipientAddress": "bchtest:q...",
   "payoutAmount": 100000000,
   "votingEndTimestamp": 1710000000,
   "executionTimelock": 1710086400

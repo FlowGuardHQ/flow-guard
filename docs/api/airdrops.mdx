@@ -49,7 +49,7 @@ Deploys the AirdropCovenant on-chain and stores `status: PENDING`.
 **Body**
 ```json
 {
-  "creator": "bitcoincash:qr...",
+  "creator": "bchtest:qr...",
   "title": "Community Rewards Q1",
   "campaignType": "AIRDROP",
   "tokenType": "BCH",
@@ -71,7 +71,7 @@ For token airdrops add `"tokenType": "FUNGIBLE_TOKEN"` and `"tokenCategory": "he
   "success": true,
   "campaign": { "id": "...", "status": "PENDING", "claim_link": "https://..." },
   "deployment": {
-    "contractAddress": "bitcoincash:p...",
+    "contractAddress": "bchtest:p...",
     "fundingRequired": true,
     "nftCommitment": "hex..."
   }
@@ -90,8 +90,8 @@ For KYC-restricted campaigns. Build a merkle tree from an explicit recipient lis
 ```json
 {
   "recipients": [
-    { "address": "bitcoincash:qr...", "amount": 1.0 },
-    { "address": "bitcoincash:qs...", "amount": 0.5 }
+    { "address": "bchtest:qr...", "amount": 1.0 },
+    { "address": "bchtest:qs...", "amount": 0.5 }
   ]
 }
 ```
@@ -137,7 +137,7 @@ Returns the merkle proof for an address. Public campaigns return `"publicCampaig
 ```http
 POST /api/airdrops/:id/claim
 
-{ "claimerAddress": "bitcoincash:q..." }
+{ "claimerAddress": "bchtest:q..." }
 ```
 
 Builds the claim `wcTransaction`. For KYC campaigns, verifies the claimer is in the merkle tree. Enforces `maxClaimsPerAddress`.
@@ -148,7 +148,7 @@ Builds the claim `wcTransaction`. For KYC campaigns, verifies the claimer is in 
 POST /api/airdrops/:id/confirm-claim
 
 {
-  "claimerAddress": "bitcoincash:q...",
+  "claimerAddress": "bchtest:q...",
   "claimedAmount": 0.5,
   "txHash": "hex64"
 }
@@ -162,7 +162,7 @@ Records the claim and increments `claimed_count`.
 POST /api/airdrops/:id/pause
 POST /api/airdrops/:id/resume
 POST /api/airdrops/:id/cancel
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Creator-only. Each returns an unsigned `wcTransaction`. Follow with the matching `confirm-pause`, `confirm-resume`, or `confirm-cancel` endpoint.

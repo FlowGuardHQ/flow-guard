@@ -10,7 +10,7 @@ Vaults are the on-chain treasury containers for all FlowGuard products. A vault 
 
 ```http
 GET /api/vaults
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Returns vaults grouped by the caller's role:
@@ -30,7 +30,7 @@ Each vault object includes a `"role"` field: `"creator"`, `"signer"`, or `"viewe
 
 ```http
 GET /api/vaults/:id
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Returns a single vault with the caller's role. Returns `403` if the vault is private and the caller is not a member.
@@ -39,7 +39,7 @@ Returns a single vault with the caller's role. Returns `403` if the vault is pri
 
 ```http
 POST /api/vaults
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Deploys the VaultCovenant on-chain. Requires exactly 3 signers and 3 corresponding public keys.
@@ -48,7 +48,7 @@ Deploys the VaultCovenant on-chain. Requires exactly 3 signers and 3 correspondi
 ```json
 {
   "name": "Operations Treasury",
-  "signers": ["bitcoincash:qr...", "bitcoincash:qs...", "bitcoincash:qt..."],
+  "signers": ["bchtest:qr...", "bchtest:qs...", "bchtest:qt..."],
   "signerPubkeys": ["02hex...", "03hex...", "02hex..."],
   "totalDeposit": 10,
   "isPublic": false
@@ -60,7 +60,7 @@ Deploys the VaultCovenant on-chain. Requires exactly 3 signers and 3 correspondi
 {
   "id": "uuid",
   "vaultId": "hex32",
-  "contractAddress": "bitcoincash:p...",
+  "contractAddress": "bchtest:p...",
   "status": "pending",
   ...
 }
@@ -70,7 +70,7 @@ Deploys the VaultCovenant on-chain. Requires exactly 3 signers and 3 correspondi
 
 ```http
 GET /api/vaults/:id/state
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Returns `{ "state": "...", "vaultId": "hex32" }`.
@@ -79,7 +79,7 @@ Returns `{ "state": "...", "vaultId": "hex32" }`.
 
 ```http
 GET /api/vaults/:id/deposit
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 ```
 
 Only the vault creator can call this. Returns the unsigned `wcTransaction` to fund the vault with its state NFT (required for the first deposit). Subsequent deposits are plain P2SH sends to `contractAddress`.
@@ -87,7 +87,7 @@ Only the vault creator can call this. Returns the unsigned `wcTransaction` to fu
 **Response**
 ```json
 {
-  "contractAddress": "bitcoincash:p...",
+  "contractAddress": "bchtest:p...",
   "totalDeposit": 10,
   "currentBalance": 0,
   "amountToDeposit": 10,
@@ -104,7 +104,7 @@ Only the vault creator can call this. Returns the unsigned `wcTransaction` to fu
 
 ```http
 POST /api/vaults/:id/update-balance
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
 { "txid": "hex64", "amount": 10 }
 ```
@@ -115,9 +115,9 @@ Verifies the transaction on-chain and updates the vault balance. The first depos
 
 ```http
 POST /api/vaults/:id/signers
-x-user-address: bitcoincash:q...
+x-user-address: bchtest:q...
 
-{ "signerAddress": "bitcoincash:qu..." }
+{ "signerAddress": "bchtest:qu..." }
 ```
 
 Creator-only. Adds a viewer-level signer record in the database.
