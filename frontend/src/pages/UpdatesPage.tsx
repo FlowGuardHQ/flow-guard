@@ -18,6 +18,16 @@ interface BlogPost {
 
 const BLOG_POSTS: BlogPost[] = [
     {
+        slug: 'how-flowguard-enforces-milestone-based-funding-on-chain',
+        title: 'How FlowGuard Enforces Milestone-Based Funding On-Chain',
+        date: '2026-02-24',
+        summary: 'FlowGuard budget plans move grant structure directly onto Bitcoin Cash. Time unlocks funds, the contract verifies conditions, and the blockchain enforces release.',
+        tags: ['Education', 'Grants', 'Milestones', 'BCH'],
+        readingTime: 6,
+        status: 'published',
+        author: 'FlowGuard Team'
+    },
+    {
         slug: 'how-flowguard-airdrops-use-merkle-proofs-on-chain',
         title: 'How FlowGuard Airdrops Use Merkle Proofs On-Chain',
         date: '2026-02-22',

@@ -1,0 +1,189 @@
+---
+title: "How FlowGuard Enforces Milestone-Based Funding On-Chain"
+date: "2026-02-24"
+summary: "FlowGuard budget plans move grant structure directly onto Bitcoin Cash. Time unlocks funds, the contract verifies conditions, and the blockchain enforces release."
+tags: ["Education", "Grants", "Milestones", "BCH"]
+status: "published"
+author: "FlowGuard Team"
+readingTime: 6
+---
+
+# How FlowGuard Enforces Milestone-Based Funding On-Chain
+
+## Introduction
+
+Grant programs and project funding often follow one of two models:
+
+- Send all funds upfront and hope milestones are met.
+- Keep funds in a shared wallet and manually release them.
+
+Both approaches introduce risk.
+
+Upfront funding exposes capital to misuse.
+
+Manual milestone releases depend on:
+
+- Someone remembering to execute payouts
+- Someone having custody
+- Someone deciding whether a milestone is complete
+
+FlowGuard introduces milestone-based funding enforced directly by covenant contracts on Bitcoin Cash.
+
+## The Core Idea
+
+A budget plan defines:
+
+- Total allocation
+- Number of milestones
+- Unlock timestamps
+- Amount per milestone
+
+Funds are locked inside a contract.
+
+They cannot be released early.
+
+They cannot exceed milestone amounts.
+
+They cannot bypass the schedule.
+
+The blockchain enforces the release logic.
+
+## How It Works
+
+FlowGuard budget plans are built using step-based vesting logic.
+
+Each milestone represents:
+
+- A timestamp
+- A specific unlock amount
+
+The contract verifies:
+
+- Has the required timestamp passed?
+- Has this milestone already been released?
+- Is the release amount within the defined allocation?
+
+If the conditions are not met, the transaction fails.
+
+There is no override.
+
+## Example Scenario
+
+Imagine a BCH development grant:
+
+- Total: 12 BCH
+- Duration: 6 months
+- 2 BCH unlocked per month
+
+The budget contract enforces:
+
+- Month 1 → 2 BCH unlockable
+- Month 2 → 2 BCH unlockable
+- Month 3 → 2 BCH unlockable
+
+If someone attempts to release 4 BCH in Month 1, the contract rejects it.
+
+If someone tries to release Month 4 funds early, the contract rejects it.
+
+Milestone enforcement is part of the script.
+
+## Why This Matters
+
+Milestone-based funding reduces:
+
+- Capital misuse risk
+- Disputes over release timing
+- Dependency on a single treasury operator
+- Informal enforcement
+
+It introduces predictability.
+
+Both funders and recipients know:
+
+- Exactly when funds unlock
+- Exactly how much unlocks
+- Exactly what the schedule enforces
+
+## Optional Pause and Control
+
+Budget plans can include pause logic.
+
+This allows:
+
+- Temporary halting of future releases
+- Controlled continuation once resolved
+
+Even this logic is defined inside the contract.
+
+Not in a backend toggle.
+
+## Difference From Manual Escrow
+
+**Traditional escrow:**
+
+A person or service holds funds.
+
+They decide when to release.
+
+**FlowGuard escrow:**
+
+The contract holds funds.
+
+Time and rules decide when to release.
+
+This removes subjective discretion from the release mechanism.
+
+## BCH-Specific Advantage
+
+Because Bitcoin Cash supports covenant logic and deterministic script validation, budget enforcement becomes:
+
+- Trust-minimized
+- Transparent
+- Publicly verifiable
+
+Anyone can inspect:
+
+- Contract address
+- Unlock schedule
+- Release history
+
+No hidden ledger entries.
+
+## Who Benefits
+
+Budget plans are useful for:
+
+- BCH ecosystem grants
+- Contributor-based funding
+- Hackathon prize vesting
+- DAO development roadmaps
+- Long-term protocol research funding
+
+Instead of hoping milestones are respected, they become enforceable.
+
+## Risk Reduction
+
+Budget contracts prevent:
+
+- Early capital extraction
+- Over-release
+- Informal milestone bypass
+- Hidden payout acceleration
+
+Funds only move when the script allows it.
+
+## Closing
+
+Milestone funding should not depend on memory or good faith.
+
+It should depend on enforceable logic.
+
+FlowGuard budget plans move grant structure directly onto Bitcoin Cash.
+
+Time unlocks funds.
+
+The contract verifies conditions.
+
+The blockchain enforces release.
+
+Next, we'll break down how governance works — and how token-weighted voting integrates with treasury logic.
