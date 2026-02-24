@@ -19,12 +19,12 @@ export default function GovernanceInfoPage() {
               Home
             </Link>
             <SolutionsDropdown />
-            <Link to="/developers" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
+            <a href="https://docs.flowguard.cash" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
               Developers
-            </Link>
-            <Link to="/security" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
+            </a>
+            <a href="https://docs.flowguard.cash/security" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
               Security
-            </Link>
+            </a>
             <Link to="/vaults">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -81,11 +81,11 @@ export default function GovernanceInfoPage() {
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
             </Link>
-            <Link to="/docs/governance">
+            <a href="https://docs.flowguard.cash/concepts/governance" target="_blank" rel="noopener noreferrer">
               <button className="border-2 border-border text-textPrimary px-8 py-4 rounded-full text-base font-semibold hover:border-primary hover:bg-surfaceAlt/30 transition-all">
                 Learn About Approvals
               </button>
-            </Link>
+            </a>
           </motion.div>
         </div>
       </section>

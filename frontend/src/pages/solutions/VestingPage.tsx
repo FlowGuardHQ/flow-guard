@@ -19,12 +19,12 @@ export default function VestingPage() {
               Home
             </Link>
             <SolutionsDropdown />
-            <Link to="/developers" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
+            <a href="https://docs.flowguard.cash" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
               Developers
-            </Link>
-            <Link to="/security" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
+            </a>
+            <a href="https://docs.flowguard.cash/security" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-textSecondary hover:text-textPrimary transition-colors">
               Security
-            </Link>
+            </a>
             <Link to="/vaults">
               <motion.button
                 whileHover={{ scale: 1.05 }}
@@ -81,11 +81,11 @@ export default function VestingPage() {
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
             </Link>
-            <Link to="/docs/vesting">
+            <a href="https://docs.flowguard.cash/concepts/vesting" target="_blank" rel="noopener noreferrer">
               <button className="border-2 border-border text-textPrimary px-8 py-4 rounded-full text-base font-semibold hover:border-primary hover:bg-surfaceAlt/30 transition-all">
                 Explore the Protocol
               </button>
-            </Link>
+            </a>
           </motion.div>
         </div>
       </section>
