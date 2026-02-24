@@ -141,6 +141,8 @@ export interface PayoutRecipient {
   category?: number; // Category ID
 }
 
+import { ProposalStatus } from './covenant-types';
+
 /**
  * Proposal (Off-chain Data)
  *
@@ -154,20 +156,5 @@ export interface Proposal {
   payout: PayoutRequest;
   submittedBy: string; // Submitter address or identifier
   submittedAt: bigint;
-  status: ProposalStatus; // Mirrors on-chain ProposalStatus
-}
-
-/**
- * User-facing proposal status for frontend
- */
-export enum ProposalStatus {
-  DRAFT = 0,
-  SUBMITTED = 1,
-  VOTING = 2,
-  APPROVED = 3,
-  QUEUED = 4,
-  EXECUTABLE = 5,
-  EXECUTED = 6,
-  CANCELLED = 7,
-  EXPIRED = 8,
+  status: ProposalStatus;
 }
