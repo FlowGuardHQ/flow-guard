@@ -1,6 +1,6 @@
 ---
 title: "Architecture"
-description: "How all FlowGuard contracts interconnect — system diagram, contract relationships, and the indexer/executor data flow."
+description: "How all FlowGuard contracts interconnect: system diagram, contract relationships, and the indexer/executor data flow."
 icon: "diagram-project"
 ---
 
@@ -20,44 +20,44 @@ flowchart TD
         GC[GrantCovenant]
         BC[BountyCovenant]
         RC[RewardCovenant]
-        VC >|vaultId| VSC
-        VC >|vaultId| RPC
-        VC >|vaultId| AC
-        VC >|vaultId| GC
-        VC >|vaultId| BC
-        VC >|vaultId| RC
-        PC >|proposalId| VLC
-        PC >|vaultId| VC
+        VC -->|vaultId| VSC
+        VC -->|vaultId| RPC
+        VC -->|vaultId| AC
+        VC -->|vaultId| GC
+        VC -->|vaultId| BC
+        VC -->|vaultId| RC
+        PC -->|proposalId| VLC
+        PC -->|vaultId| VC
     end
 
     subgraph Backend ["Backend (Node.js)"]
-        IDX[Indexer\nblockchain-monitor\nUTXO scanner]
+        IDX["Indexer\nblockchain-monitor\nUTXO scanner"]
         DB[(SQLite DB)]
-        API[REST API\nExpress]
-        EXE[Executor\ncycle-unlock-scheduler\ntransaction builder]
-        IDX > DB
-        EXE > DB
-        API > DB
+        API["REST API\nExpress"]
+        EXE["Executor\ncycle-unlock-scheduler\ntransaction builder"]
+        IDX --> DB
+        EXE --> DB
+        API --> DB
     end
 
     subgraph Frontend ["Frontend (React/Vite)"]
-        APP[Web App\nDashboard + Public pages]
+        APP["Web App\nDashboard + Public pages"]
     end
 
-    BCH[BCH Node\nElectrum protocol] > IDX
-    EXE > BCH
-    APP > API
-    APP >|wallet tx| BCH
+    BCH["BCH Node\nElectrum protocol"] --> IDX
+    EXE --> BCH
+    APP --> API
+    APP -->|"wallet tx"| BCH
 ```
 
 ## Contract Dependency Map
 
 ```mermaid
 flowchart LR
-    V[VaultCovenant] "spawn" > S[Streaming Covenants\nVesting + RecurringPayment]
-    V "spawn" > D[Distribution Covenants\nAirdrop + Grant + Bounty + Reward]
-    V "linked via proposalId" > P[ProposalCovenant]
-    P "spawns per vote" > VL[VoteLockCovenant]
+    V[VaultCovenant] -->|spawn| S["Streaming Covenants\nVesting + RecurringPayment"]
+    V -->|spawn| D["Distribution Covenants\nAirdrop + Grant + Bounty + Reward"]
+    V -->|"linked via vaultId"| P[ProposalCovenant]
+    P -->|"spawns per vote"| VL[VoteLockCovenant]
 ```
 
 ## NFT Commitment Sizes
@@ -88,11 +88,11 @@ sequenceDiagram
 
     BCH->>BM: New block notification
     BM->>BCH: Fetch block transactions
-    BM->>BM: Parse covenant UTXOs\nDecode NFT commitments
-    BM->>DB: Upsert covenant states\nInsert transactions
+    BM->>BM: Parse covenant UTXOs / decode NFT commitments
+    BM->>DB: Upsert covenant states + insert transactions
     FE->>API: GET /api/streams
     API->>DB: Query streams table
-    API>>FE: Stream records with decoded state
+    API->>FE: Stream records with decoded state
 ```
 
 ## Executor Flow
@@ -104,13 +104,13 @@ sequenceDiagram
     participant TB as TransactionBuilder
     participant BCH as BCH Node
 
-    loop Every minute
-        SCH->>DB: Query active recurring payments\nwhere next_payment <= now
-        DB>>SCH: Eligible covenants
+    loop Every 60 seconds
+        SCH->>DB: Query active recurring payments where next_payment <= now
+        DB->>SCH: Eligible covenants
         SCH->>TB: Build pay() transaction
         TB->>BCH: Broadcast transaction
-        BCH>>TB: Transaction ID
-        TB->>DB: Record execution
+        BCH->>TB: Transaction ID
+        TB->>DB: Record execution + advance next_payment_date
     end
 ```
 
