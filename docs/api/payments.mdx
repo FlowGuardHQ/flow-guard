@@ -1,0 +1,143 @@
+---
+title: "Payments API"
+description: "Endpoints for creating and managing recurring payment contracts with configurable intervals."
+icon: "repeat"
+---
+
+Recurring payments auto-release a fixed amount at a fixed interval (`DAILY`, `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `YEARLY`). The contract is funded with 12 periods upfront and the recipient claims each period as it becomes due.
+
+## List Payments
+
+```http
+GET /api/payments?sender={address}
+GET /api/payments?recipient={address}
+GET /api/payments?sender={address}&recipient={address}
+```
+
+## Get Payment
+
+```http
+GET /api/payments/:id
+```
+
+Returns the payment record plus its execution history from `payment_executions`.
+
+## Create Payment
+
+```http
+POST /api/payments/create
+```
+
+Deploys the RecurringPaymentCovenant on-chain. Stores `status: PENDING` until funded.
+
+**Body**
+```json
+{
+  "sender": "bitcoincash:qr...",
+  "recipient": "bitcoincash:qs...",
+  "recipientName": "Alice",
+  "tokenType": "BCH",
+  "amountPerPeriod": 0.1,
+  "interval": "MONTHLY",
+  "startDate": 1700000000,
+  "endDate": 1762000000,
+  "cancelable": true,
+  "pausable": true,
+  "vaultId": "optional-uuid"
+}
+```
+
+Valid values for `interval`: `DAILY`, `WEEKLY`, `BIWEEKLY`, `MONTHLY`, `YEARLY`.
+
+**Response**
+```json
+{
+  "success": true,
+  "payment": { "id": "...", "status": "PENDING", "payment_id": "#FG-PAY-001", ... },
+  "deployment": {
+    "contractAddress": "bitcoincash:p...",
+    "paymentId": "#FG-PAY-001",
+    "fundingRequired": true,
+    "cancelable": true
+  }
+}
+```
+
+## Get Funding Info
+
+```http
+GET /api/payments/:id/funding-info
+```
+
+Returns the unsigned `wcTransaction` to fund 12 intervals upfront.
+
+## Confirm Funding
+
+```http
+POST /api/payments/:id/confirm-funding
+
+{ "txHash": "hex64" }
+```
+
+Verifies on-chain and activates the payment contract.
+
+## Claim
+
+```http
+POST /api/payments/:id/claim
+
+{ "recipientAddress": "bitcoincash:qs..." }
+```
+
+Builds the claim `wcTransaction`. Computes how many intervals are claimable since `nextPaymentDate`. Only the registered recipient can claim.
+
+**Response**
+```json
+{
+  "success": true,
+  "claimableAmount": 0.3,
+  "intervalsClaimable": 3,
+  "wcTransaction": { ... }
+}
+```
+
+## Confirm Claim
+
+```http
+POST /api/payments/:id/confirm-claim
+
+{
+  "claimedAmount": 0.3,
+  "txHash": "hex64",
+  "intervalsClaimed": 3
+}
+```
+
+Updates `total_paid`, `payment_count`, and `next_payment_date`. Records execution in `payment_executions`.
+
+## Pause
+
+```http
+POST /api/payments/:id/pause
+x-user-address: bitcoincash:q...
+```
+
+Sender-only. Returns `wcTransaction` to pause. Confirm with `POST /api/payments/:id/confirm-pause`.
+
+## Resume
+
+```http
+POST /api/payments/:id/resume
+x-user-address: bitcoincash:q...
+```
+
+Sender-only. Resumes from `PAUSED`. Confirm with `POST /api/payments/:id/confirm-resume`. Updates `next_payment_date` to `now + intervalSeconds`.
+
+## Cancel
+
+```http
+POST /api/payments/:id/cancel
+x-user-address: bitcoincash:q...
+```
+
+Sender-only. Returns `wcTransaction` to cancel — unfunded periods are returned to sender. Confirm with `POST /api/payments/:id/confirm-cancel`.

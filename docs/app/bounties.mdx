@@ -1,0 +1,30 @@
+---
+title: "Bounties"
+description: "Fund a task with conditional release — pay out when the work is verified."
+icon: "trophy"
+---
+
+Bounties are milestone-based budget plans scoped to a single deliverable. The funder locks BCH or tokens in a covenant. The bounty hunter completes the task and claims the release once the time lock elapses and the funder confirms the work.
+
+## Creating a Bounty
+
+Navigate to **Bounties → New Bounty** and specify:
+
+| Field | Description |
+|-------|-------------|
+| Title | What needs to be built or done |
+| Recipient | BCH address of the bounty hunter |
+| Vault | Funding vault |
+| Amount | Total payout in BCH or tokens |
+| Duration | How many seconds after funding the payout unlocks |
+| Cancelable | Whether the funder can cancel if work is unacceptable |
+
+The bounty becomes a single-milestone budget plan under the hood. The recipient can release the full amount after the duration elapses.
+
+## Claiming a Bounty
+
+When the lock period elapses, the bounty hunter navigates to the bounty and clicks **Release**. No intermediary is involved — the covenant enforces the time condition directly.
+
+## Cancelling
+
+If the funder set `cancelable: true` and the work was not completed satisfactorily, they can cancel before the recipient releases. Cancelled funds return to the vault controller address.

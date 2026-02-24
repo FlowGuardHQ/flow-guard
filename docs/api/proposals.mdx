@@ -1,0 +1,158 @@
+---
+title: "Proposals API"
+description: "Endpoints for creating, approving, and executing treasury payout proposals with on-chain 2-of-3 multisig."
+icon: "file-signature"
+---
+
+Proposals are on-chain treasury payout requests. A proposal moves funds from a vault's covenant UTXO to a recipient address after 2-of-3 signers approve it.
+
+## List All Proposals
+
+```http
+GET /api/proposals?status=pending
+```
+
+Returns all proposals across all vaults, optionally filtered by `status` (`pending`, `approved`, `executed`, `rejected`).
+
+## List Vault Proposals
+
+```http
+GET /api/vaults/:vaultId/proposals
+```
+
+Returns all proposals scoped to a specific vault.
+
+## Get Proposal
+
+```http
+GET /api/proposals/:id
+```
+
+Returns a single proposal with approval list, amounts, and status.
+
+## Create Proposal (Off-chain)
+
+```http
+POST /api/vaults/:vaultId/proposals
+x-user-address: bitcoincash:q...
+
+{
+  "recipient": "bitcoincash:qs...",
+  "amount": 2.5,
+  "reason": "Quarterly contractor payout"
+}
+```
+
+Creates a `pending` proposal record in the database. No on-chain transaction yet.
+
+## Create On-chain Proposal
+
+```http
+POST /api/proposals/:id/create-onchain
+x-user-address: bitcoincash:q...
+```
+
+Deploys the ProposalCovenant on-chain with the payout parameters, returns a `wcTransaction` for the proposer to sign and fund.
+
+**Response**
+```json
+{
+  "success": true,
+  "proposalContractAddress": "bitcoincash:p...",
+  "tokenCategory": "hex32",
+  "fundingSatoshis": "250000000",
+  "wcTransaction": { ... }
+}
+```
+
+## Confirm Proposal Creation
+
+```http
+POST /api/proposals/:id/confirm-create
+
+{ "txHash": "hex64" }
+```
+
+Verifies the covenant state NFT output exists on-chain and transitions the proposal to `pending`.
+
+## Approve On-chain
+
+```http
+POST /api/proposals/:id/approve-onchain
+x-user-address: bitcoincash:q...
+```
+
+Builds the approval `wcTransaction` for one of the 3 signers. Each signer must call this and sign independently.
+
+**Response**
+```json
+{
+  "success": true,
+  "proposalContractAddress": "bitcoincash:p...",
+  "newApprovalCount": 1,
+  "isApproved": false,
+  "wcTransaction": { ... }
+}
+```
+
+## Confirm Approval
+
+```http
+POST /api/proposals/:id/confirm-approval
+x-user-address: bitcoincash:q...
+
+{ "txHash": "hex64" }
+```
+
+Records the signer's approval. When `approvalCount` reaches 2, the proposal status becomes `approved`.
+
+## Execute Payout
+
+```http
+POST /api/proposals/:id/execute
+x-user-address: bitcoincash:q...
+```
+
+Vault signer initiates the 2-of-2 payout signing session. Returns a `wcTransaction` with `"broadcast": false` — the wallet must sign but not broadcast.
+
+**Response**
+```json
+{
+  "success": true,
+  "sessionId": "...",
+  "wcTransaction": { ..., "broadcast": false },
+  "signaturesCollected": 0,
+  "requiredSignatures": 2,
+  "requiredSignerAddresses": ["bitcoincash:q...", "bitcoincash:q..."],
+  "payoutSatoshis": "250000000"
+}
+```
+
+## Submit Execute Signature
+
+```http
+POST /api/proposals/:id/execute-signature
+x-user-address: bitcoincash:q...
+
+{
+  "sessionId": "...",
+  "signedTransaction": "0200..."
+}
+```
+
+Each of the 2 required signers submits their signature. When the second signature arrives, the backend broadcasts the transaction automatically and marks the proposal `executed`.
+
+## Broadcast
+
+```http
+POST /api/proposals/broadcast
+
+{
+  "txHex": "0200...",
+  "txType": "execute",
+  "vaultId": "...",
+  "proposalId": "..."
+}
+```
+
+Low-level broadcast endpoint. Used when automatic broadcast is not desired.

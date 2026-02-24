@@ -1,0 +1,40 @@
+---
+title: "Status"
+description: "FlowGuard service health, network status, and known issues."
+icon: "signal"
+---
+
+## Network
+
+FlowGuard currently operates on **Chipnet** (BCH testnet). Mainnet deployment is planned following security audits.
+
+| Component | Status | Network |
+|-----------|--------|---------|
+| Frontend | Live | Chipnet |
+| Backend API | Live | Chipnet |
+| WalletConnect v2 | Live | Chipnet |
+| Indexer | Optional | Chipnet |
+| Executor | Optional | Chipnet |
+
+## Checking API Health
+
+```http
+GET /api/health
+```
+
+Returns `{ "status": "ok", "network": "chipnet" }` when the backend is running and the database is connected.
+
+## Chipnet Faucet
+
+Get test BCH at [tbch.googol.cash](https://tbch.googol.cash/). Chipnet BCH has no real-world value.
+
+## Known Limitations
+
+- **Mainnet not yet live** — all current deployments are on Chipnet
+- **Executor is opt-in** — without the executor service, recipients must manually claim their vested amounts
+- **Indexer is opt-in** — advanced analytics require the Postgres indexer running separately
+- **3-signer requirement** — vaults require exactly 3 signer addresses and public keys
+
+## Getting Help
+
+Report issues on the [FlowGuard GitHub repository](https://github.com/winsznx/flow-guard) or reach out on the community channels listed in the footer.

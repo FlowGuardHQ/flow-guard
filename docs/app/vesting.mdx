@@ -1,0 +1,50 @@
+---
+title: "Vesting Streams"
+description: "How to create, monitor, and claim vesting streams in the FlowGuard app."
+icon: "lock-keyhole"
+---
+
+Vesting streams release BCH or CashTokens to a recipient over time. Choose linear (continuous) or step (discrete chunks) vesting. See [Create a Vesting Stream](/guides/vesting/create) for the full step-by-step guide.
+
+## Stream Types
+
+| Type | How it works |
+|------|-------------|
+| **LINEAR** | Tokens vest continuously per second from `startTime` to `endTime` |
+| **STEP** | Tokens release in equal chunks at fixed intervals |
+| **RECURRING** | Equal payments at calendar intervals (handled via the Payments product) |
+
+## Viewing Your Streams
+
+From **Streams** in the sidebar, you see two tabs:
+
+- **Sending** — streams where your address is the sender
+- **Receiving** — streams where your address is the recipient
+
+Each card shows the progress bar (vested %), total amount, asset type, and status.
+
+## Claiming Vested Funds
+
+<Steps>
+  <Step title="Open the stream">
+    Click any stream card in your **Receiving** tab.
+  </Step>
+  <Step title="Check claimable amount">
+    The stream detail page shows the current claimable amount based on elapsed time and the on-chain NFT commitment.
+  </Step>
+  <Step title="Claim">
+    Click **Claim**. Your wallet will prompt you to sign the transaction. No gas — BCH covenant execution is nearly free.
+  </Step>
+  <Step title="Confirm">
+    After the wallet broadcasts, the app calls `confirm-claim` and updates your balance.
+  </Step>
+</Steps>
+
+## Cancelling a Stream
+
+If the stream was created with `cancelable: true`, the sender can cancel at any time. The vested portion goes to the recipient, and the unvested remainder returns to the sender. Navigate to the stream detail and click **Cancel**.
+
+## Asset Support
+
+- **BCH** — amount in whole BCH (e.g., `10.5`)
+- **CashTokens (FT)** — amount in base token units, requires `tokenCategory` (hex32 category ID)

@@ -1,0 +1,33 @@
+---
+title: "Create a Reward"
+description: "Issue an immediate or time-locked reward to a specific BCH address."
+icon: "gift"
+---
+
+<Steps>
+  <Step title="Navigate to Rewards">
+    Go to **Rewards → Issue Reward**.
+  </Step>
+  <Step title="Configure the reward">
+    | Field | Description |
+    |-------|-------------|
+    | Recipient | BCH P2PKH address |
+    | Amount | BCH or token amount |
+    | Token | BCH or CashToken (provide `tokenCategory`) |
+    | Release after | `0` for immediate, or future Unix timestamp |
+    | Vault | Funding source vault (optional) |
+  </Step>
+  <Step title="Deploy and fund">
+    Click **Issue Reward**. For immediate rewards (`release after: 0`), the backend creates an open airdrop with `amountPerClaim` set to the reward amount and the recipient's address in the merkle tree. For deferred rewards, it creates a single-milestone budget plan.
+
+    Sign the funding `wcTransaction` in your wallet.
+  </Step>
+  <Step title="Confirm">
+    After broadcasting, confirm the transaction. The reward appears in the recipient's dashboard immediately.
+  </Step>
+</Steps>
+
+## Immediate vs. Deferred
+
+- **Immediate** — recipient can claim the moment the funding transaction is confirmed on-chain
+- **Deferred** — the covenant enforces a time lock; the recipient can claim after `releaseAfter` seconds have elapsed since funding

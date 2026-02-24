@@ -1,0 +1,47 @@
+---
+title: "Recurring Payments"
+description: "How to set up and manage recurring payment contracts in the FlowGuard app."
+icon: "repeat"
+---
+
+Recurring payments automate fixed-amount payroll, subscriptions, or retainer agreements on BCH. Funds are locked in a covenant and released each interval — no custodian required.
+
+## Creating a Payment
+
+Navigate to **Payments → New Payment** and fill in:
+
+| Field | Description |
+|-------|-------------|
+| Recipient | BCH P2PKH address |
+| Amount per period | BCH or token amount per interval |
+| Interval | Daily, Weekly, Biweekly, Monthly, or Yearly |
+| Start date | Unix timestamp when first payment becomes claimable |
+| End date | Optional cutoff date |
+| Cancelable | Whether the sender can reclaim remaining funds |
+| Pausable | Whether the sender can pause disbursements |
+
+The contract is funded with **12 periods upfront**. If the sender wants to extend, they can top up the contract directly.
+
+## Claiming a Payment
+
+Recipients can claim all overdue intervals in a single transaction. The contract verifies `current_time >= next_payment_time` and releases the correct number of intervals.
+
+<Steps>
+  <Step title="Open the payment">
+    Click on the payment in your **Receiving** tab.
+  </Step>
+  <Step title="Claim">
+    Click **Claim**. The app calculates how many intervals are due and builds a single claim transaction.
+  </Step>
+  <Step title="Confirm">
+    Sign in your wallet. The `confirm-claim` call updates `total_paid` and schedules the next payment date.
+  </Step>
+</Steps>
+
+## Pausing and Resuming
+
+The sender can pause a payment (e.g. during a contract dispute). While paused, no new intervals become claimable. Resuming resets `next_payment_date` to `now + interval`.
+
+## Cancelling
+
+Cancel returns all unfunded period balances to the sender's address. Already-due periods at the time of cancellation are still claimable by the recipient.

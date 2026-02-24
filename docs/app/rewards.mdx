@@ -1,0 +1,28 @@
+---
+title: "Rewards"
+description: "Issue one-time or recurring BCH or token rewards to contributors and community members."
+icon: "gift"
+---
+
+Rewards are immediate or scheduled lump-sum distributions to specific addresses. They use a single-claim airdrop or single-milestone budget plan, depending on whether the payout is immediate or deferred.
+
+## Issuing a One-time Reward
+
+Navigate to **Rewards → Issue Reward**:
+
+| Field | Description |
+|-------|-------------|
+| Recipient | BCH address |
+| Amount | BCH or token amount |
+| Asset | BCH or CashToken category |
+| Release after | 0 for immediate, or a future Unix timestamp |
+
+If **Release after** is 0 or in the past, the recipient can claim immediately after funding is confirmed.
+
+## Recurring Rewards
+
+For ongoing rewards (e.g. monthly contributor stipends), use the **Recurring Payments** product instead and set a `MONTHLY` interval.
+
+## Claiming a Reward
+
+Recipients see outstanding rewards in their **Receiving** tab. A single tap (mobile) or click (desktop) signs and broadcasts the claim. No manual merkel proof required — open rewards need only the claimer's wallet signature.

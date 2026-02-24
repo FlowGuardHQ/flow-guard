@@ -1,0 +1,163 @@
+---
+title: "Streams API"
+description: "Endpoints for creating, funding, claiming, and cancelling vesting streams and recurring payments."
+icon: "wave-sine"
+---
+
+Streams cover both **linear/step vesting** (`streamType: LINEAR | STEP`) and **recurring payments** (`streamType: RECURRING`). All routes live under `/api`.
+
+## List Streams
+
+```http
+GET /api/streams?recipient={address}
+GET /api/streams?sender={address}
+GET /api/streams?address={address}
+GET /api/streams?sender={address}&recipient={address}&status=ACTIVE
+```
+
+Returns all streams matching the query. `address` matches both sender and recipient roles.
+
+**Response**
+```json
+{
+  "success": true,
+  "streams": [...],
+  "total": 3
+}
+```
+
+## Get Stream
+
+```http
+GET /api/streams/:id
+```
+
+Returns the stream record plus its full claim history.
+
+```json
+{
+  "success": true,
+  "stream": { ... },
+  "claims": [
+    { "id": "...", "stream_id": "...", "recipient": "...", "amount": 1.5, "claimed_at": 1700000000, "tx_hash": "..." }
+  ]
+}
+```
+
+## Create Stream
+
+```http
+POST /api/streams/create
+x-user-address: bitcoincash:qr...
+```
+
+Deploys the CashScript covenant on-chain and stores `status: PENDING`. Fund the returned contract address to activate.
+
+**Body**
+```json
+{
+  "sender": "bitcoincash:qr...",
+  "recipient": "bitcoincash:qs...",
+  "tokenType": "BCH",
+  "totalAmount": 10,
+  "streamType": "LINEAR",
+  "startTime": 1700000000,
+  "endTime": 1731536000,
+  "cliffTimestamp": 1706745600,
+  "cancelable": true,
+  "vaultId": "optional-vault-uuid"
+}
+```
+
+For `RECURRING` streams, `streamType: "RECURRING"` and the interval is derived from `(endTime - startTime)`.
+For `FUNGIBLE_TOKEN` streams, also include `"tokenCategory": "hex32"`.
+
+**Response**
+```json
+{
+  "success": true,
+  "stream": { "id": "...", "status": "PENDING", ... },
+  "deployment": {
+    "contractAddress": "bitcoincash:p...",
+    "fundingRequired": true,
+    "nftCommitment": "hex..."
+  }
+}
+```
+
+## Get Funding Info
+
+```http
+GET /api/streams/:id/funding-info
+```
+
+Returns the unsigned `wcTransaction` the sender must sign to fund the stream contract.
+
+Only works on streams with `status: PENDING`. Includes inputs, outputs, fee and the full `wcTransaction`.
+
+## Confirm Funding
+
+```http
+POST /api/streams/:id/confirm-funding
+```
+
+**Body**
+```json
+{ "txHash": "hex64" }
+```
+
+Verifies the transaction on-chain and transitions the stream to `ACTIVE`.
+
+## Get Claim Info
+
+```http
+GET /api/streams/:id/claim-info
+```
+
+Returns the currently claimable amount and the unsigned `wcTransaction`. Only works on `ACTIVE` streams. Uses on-chain NFT commitment to compute vested amount.
+
+## Claim
+
+```http
+POST /api/streams/:id/claim
+x-user-address: bitcoincash:q...
+
+{ "recipientAddress": "bitcoincash:qs..." }
+```
+
+Builds and returns the claim `wcTransaction`. Only the stream recipient can call this.
+
+## Confirm Claim
+
+```http
+POST /api/streams/:id/confirm-claim
+
+{ "claimedAmount": 1.5, "txHash": "hex64" }
+```
+
+Updates `withdrawn_amount` and records the claim in `stream_claims`.
+
+## Cancel Stream
+
+```http
+POST /api/streams/:id/cancel
+x-user-address: bitcoincash:q...
+
+{ "sender": "bitcoincash:qr..." }
+```
+
+Only the stream sender can cancel, and only if `cancelable: true` and `status: ACTIVE`. Returns the cancel `wcTransaction` which splits vested and unvested amounts.
+
+<Warning>
+If the contract's sender hash resolves to a different return address than the signing wallet, the cancel is blocked with a `409` to protect against stranded funds. Pass `"allowUnsafeRecovery": true` to override.
+</Warning>
+
+## Confirm Cancel
+
+```http
+POST /api/streams/:id/confirm-cancel
+
+{ "txHash": "hex64" }
+```
+
+Transitions the stream to `CANCELLED`.

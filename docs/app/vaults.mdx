@@ -1,0 +1,37 @@
+---
+title: "Vaults"
+description: "Create and manage multi-sig treasury vaults to fund FlowGuard products."
+icon: "vault"
+---
+
+Vaults are the on-chain treasury containers for all FlowGuard products. All streams, payments, airdrops, grants, and governance tokens can be linked to a vault, making it easy to manage organizational budgets from a single address.
+
+## Creating a Vault
+
+Navigate to **Vaults → Create Vault**:
+
+| Field | Description |
+|-------|-------------|
+| Name | Human-readable label |
+| Signer 1, 2, 3 | BCH addresses of the three vault signers |
+| Signer pubkeys | 33-byte compressed public keys for the CashScript 2-of-3 covenant |
+| Total deposit | Initial BCH deposit amount |
+| Public | Whether the vault appears in the public explorer |
+
+Three signers and three public keys are required. The on-chain vault covenant enforces that any payout requires at minimum 2-of-3 signatures.
+
+## Funding a Vault
+
+After creation, the dashboard shows a **Deposit** button. The first deposit must include the state NFT (built automatically by the app). Subsequent deposits are plain P2SH sends to the vault contract address.
+
+## Vault Roles
+
+| Role | Permissions |
+|------|-------------|
+| Creator | Create and fund the vault, create proposals, pause/cancel products |
+| Signer | Approve and co-sign proposals |
+| Viewer | Read-only access to public vault data |
+
+## Linked Products
+
+Any stream, payment, airdrop, or grant can be linked to a vault by selecting it in the creation form. This surfaces the product in the vault's detail view and uses the vault's `vaultId` in the covenant's constructor parameters, allowing future governance proposals to control the contract.

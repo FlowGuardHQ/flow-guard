@@ -1,0 +1,43 @@
+---
+title: "Explorer"
+description: "Browse all FlowGuard activity across streams, payments, airdrops, and treasury proposals."
+icon: "telescope"
+---
+
+The Explorer gives a real-time, public view of all on-chain activity across the FlowGuard protocol. No wallet connection required to browse.
+
+## Activity Feed
+
+Navigate to **Explorer** in the sidebar. The feed shows a merged timeline of all streams, payments, airdrops, and treasury proposals sorted by creation time.
+
+### Filters
+
+| Filter | Options |
+|--------|---------|
+| Type | All, Vesting, Payments, Airdrops, Treasury |
+| Asset | All, BCH, CashTokens |
+| Status | All, Active, Pending, Completed, Cancelled |
+
+### Activity Columns
+
+| Column | Description |
+|--------|-------------|
+| ID | Protocol-level identifier (`#FG-STREAM-001`, `#FG-PAY-003`, etc.) |
+| Sender | Source address |
+| Recipient | Destination address |
+| Amount | Total amount locked |
+| Progress | Percentage vested or claimed |
+| Type | STREAM, PAYMENT, AIRDROP, or TREASURY |
+| Status | Current covenant status |
+
+## Stats Panel
+
+The right panel shows aggregate stats across the currently filtered view:
+
+- **Total Volume** — sum of all `total_amount` values
+- **Active** — count of currently active contracts
+- **Completed** — count of fully fulfilled contracts
+
+## Linking to a Record
+
+Each row links to the full detail page for that stream, payment, airdrop, or proposal. Share Explorer links publicly to let recipients verify their streams before accepting them.

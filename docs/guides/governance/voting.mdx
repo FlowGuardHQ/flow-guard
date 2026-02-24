@@ -1,0 +1,44 @@
+---
+title: "Voting on Proposals"
+description: "How to approve a governance proposal and co-sign the payout execution as a vault signer."
+icon: "check-to-slot"
+---
+
+## Approving a Proposal
+
+When a proposal is created on-chain, each vault signer receives a notification. Each signer approves independently:
+
+<Steps>
+  <Step title="Open the proposal">
+    Navigate to **Governance → Proposals** in the vault and click the pending proposal.
+  </Step>
+  <Step title="Approve on-chain">
+    Click **Approve**. The app calls `POST /api/proposals/:id/approve-onchain`. Sign the approval `wcTransaction` in your wallet.
+  </Step>
+  <Step title="Confirm">
+    After broadcasting, the app calls `POST /api/proposals/:id/confirm-approval`. Your address is added to the `approvals` list. When 2 of 3 signers approve, the proposal moves to `approved`.
+  </Step>
+</Steps>
+
+## Executing the Payout
+
+Once the proposal is `approved`, any of the 2 signers who approved can initiate execution:
+
+<Steps>
+  <Step title="Initiate execute">
+    Click **Execute Payout**. The app calls `POST /api/proposals/:id/execute`. The backend selects the 2-signer pair and returns a `wcTransaction` with `"broadcast": false`. Sign but do **not** broadcast yet — the wallet knows to hold the signed transaction.
+  </Step>
+  <Step title="Submit signature">
+    Call `POST /api/proposals/:id/execute-signature` with the `sessionId` and your `signedTransaction`. The first signer submits their partial signature.
+  </Step>
+  <Step title="Second signer signs">
+    The second required signer opens the same proposal, clicks **Execute Payout**, and submits their signature via `execute-signature`.
+  </Step>
+  <Step title="Auto-broadcast">
+    Once the second signature arrives, the backend validates both signatures, broadcasts the fully-signed transaction, and marks the proposal `executed`. Funds appear in the recipient's wallet.
+  </Step>
+</Steps>
+
+## Rejection
+
+FlowGuard does not have an explicit reject action. If a proposal does not reach 2-of-3 approvals before the voting period ends, it stays `pending` indefinitely. The proposer can cancel the on-chain covenant and recover the locked funds via a direct P2SH spend.

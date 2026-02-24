@@ -1,0 +1,43 @@
+---
+title: "Issue Rewards"
+description: "How recipients see and claim their rewards in the FlowGuard app."
+icon: "hand-holding-dollar"
+---
+
+## Viewing Outstanding Rewards
+
+When funded, a reward appears in the recipient's **Receiving** dashboard. Each card shows:
+
+- Who issued the reward
+- Amount and asset type
+- Whether it is immediately claimable or has a lock countdown
+
+## Claiming an Immediate Reward
+
+<Steps>
+  <Step title="Open the reward">
+    Click the reward card in **Rewards → Receiving**.
+  </Step>
+  <Step title="Claim">
+    Click **Claim Reward**. The sign prompt appears in your wallet immediately — there is no waiting period for immediate rewards.
+  </Step>
+  <Step title="Confirm">
+    After broadcasting, the reward is marked claimed and the amount appears in your on-chain balance.
+  </Step>
+</Steps>
+
+## Claiming a Deferred Reward
+
+The claim button is disabled with a countdown timer until the `releaseAfter` timestamp is reached. Once unlocked, the same claim flow applies.
+
+## Multiple Outstanding Rewards
+
+Each reward is a separate covenant. Claim them individually. There is no batch-claim across different reward contracts.
+
+## Reward vs. Stream vs. Airdrop
+
+| Product | Use case |
+|---------|----------|
+| Reward | One-time payout to one person |
+| Stream | Continuous vesting to one person over time |
+| Airdrop | Same amount to many people at once |

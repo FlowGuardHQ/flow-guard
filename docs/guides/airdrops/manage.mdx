@@ -1,0 +1,38 @@
+---
+title: "Manage an Airdrop"
+description: "Pause, resume, or cancel an active airdrop campaign and monitor claims."
+icon: "sliders"
+---
+
+## Monitoring Claims
+
+Open your campaign from **Airdrops → My Campaigns**. The detail page shows:
+
+- **Claimed** — number of wallets that have claimed so far
+- **Total recipients** — either the merkle tree size or `totalAmount / amountPerClaim`
+- **Claimed amount** — BCH or tokens distributed
+- **Remaining** — funds still locked in the contract
+
+The claim list below shows each claimer address, amount, timestamp, and transaction hash.
+
+## Pausing a Campaign
+
+Click **Pause** on the campaign detail page. The app calls `POST /api/airdrops/:id/pause` and returns a `wcTransaction`. Sign it in your wallet, then confirm with `POST /api/airdrops/:id/confirm-pause`.
+
+While paused, the `/claim` endpoint returns a `400` and the claim button is disabled in the UI.
+
+## Resuming
+
+Click **Resume**. Signs and confirms `POST /api/airdrops/:id/resume` → `POST /api/airdrops/:id/confirm-resume`. Claims are re-enabled instantly on-chain.
+
+## Cancelling
+
+Click **Cancel**. The cancel transaction withdraws all remaining unclaimed funds back to the creator's address. Confirmed via `POST /api/airdrops/:id/confirm-cancel`. The campaign transitions to `CANCELLED` and is removed from public listings.
+
+<Warning>
+Once cancelled, the remaining funds return to your wallet. Already-confirmed claims are unaffected.
+</Warning>
+
+## CSV Export
+
+Click **Export claims** to download a CSV of all claim records (`claimer, amount, tx_hash, claimed_at`).

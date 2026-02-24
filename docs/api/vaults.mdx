@@ -1,0 +1,123 @@
+---
+title: "Vaults API"
+description: "Endpoints for creating, funding, and managing multi-sig treasury vaults."
+icon: "vault"
+---
+
+Vaults are the on-chain treasury containers for all FlowGuard products. A vault requires exactly 3 signers and 3 signer public keys for the on-chain multisig covenant.
+
+## List Vaults
+
+```http
+GET /api/vaults
+x-user-address: bitcoincash:q...
+```
+
+Returns vaults grouped by the caller's role:
+
+```json
+{
+  "created": [...],
+  "signerIn": [...],
+  "public": [...],
+  "all": [...]
+}
+```
+
+Each vault object includes a `"role"` field: `"creator"`, `"signer"`, or `"viewer"`.
+
+## Get Vault
+
+```http
+GET /api/vaults/:id
+x-user-address: bitcoincash:q...
+```
+
+Returns a single vault with the caller's role. Returns `403` if the vault is private and the caller is not a member.
+
+## Create Vault
+
+```http
+POST /api/vaults
+x-user-address: bitcoincash:q...
+```
+
+Deploys the VaultCovenant on-chain. Requires exactly 3 signers and 3 corresponding public keys.
+
+**Body**
+```json
+{
+  "name": "Operations Treasury",
+  "signers": ["bitcoincash:qr...", "bitcoincash:qs...", "bitcoincash:qt..."],
+  "signerPubkeys": ["02hex...", "03hex...", "02hex..."],
+  "totalDeposit": 10,
+  "isPublic": false
+}
+```
+
+**Response** — `201`
+```json
+{
+  "id": "uuid",
+  "vaultId": "hex32",
+  "contractAddress": "bitcoincash:p...",
+  "status": "pending",
+  ...
+}
+```
+
+## Get Vault State
+
+```http
+GET /api/vaults/:id/state
+x-user-address: bitcoincash:q...
+```
+
+Returns `{ "state": "...", "vaultId": "hex32" }`.
+
+## Get Deposit Info
+
+```http
+GET /api/vaults/:id/deposit
+x-user-address: bitcoincash:q...
+```
+
+Only the vault creator can call this. Returns the unsigned `wcTransaction` to fund the vault with its state NFT (required for the first deposit). Subsequent deposits are plain P2SH sends to `contractAddress`.
+
+**Response**
+```json
+{
+  "contractAddress": "bitcoincash:p...",
+  "totalDeposit": 10,
+  "currentBalance": 0,
+  "amountToDeposit": 10,
+  "wcTransaction": { ... },
+  "stateNft": {
+    "tokenCategory": "hex32",
+    "commitment": "hex..."
+  },
+  "depositSatoshis": "1000000000"
+}
+```
+
+## Update Balance (Confirm Deposit)
+
+```http
+POST /api/vaults/:id/update-balance
+x-user-address: bitcoincash:q...
+
+{ "txid": "hex64", "amount": 10 }
+```
+
+Verifies the transaction on-chain and updates the vault balance. The first deposit must include a mutable NFT output to the contract address.
+
+## Add Signer (Off-chain)
+
+```http
+POST /api/vaults/:id/signers
+x-user-address: bitcoincash:q...
+
+{ "signerAddress": "bitcoincash:qu..." }
+```
+
+Creator-only. Adds a viewer-level signer record in the database.

@@ -1,0 +1,40 @@
+---
+title: "Airdrops"
+description: "Launch BCH or token distribution campaigns with optional recipient whitelisting."
+icon: "parachute-box"
+---
+
+Airdrops let you distribute BCH or CashTokens to many wallets at once. Two campaign modes are available:
+
+- **Open** — any BCH address can claim up to `maxClaimsPerAddress` times
+- **KYC / Whitelisted** — only addresses in the merkle tree can claim, each with a custom amount
+
+## Creating a Campaign
+
+Navigate to **Airdrops → New Campaign** and configure:
+
+| Field | Description |
+|-------|-------------|
+| Title | Public name for the campaign |
+| Token | BCH or a CashToken (requires token category) |
+| Total amount | Total pool size |
+| Amount per claim | Fixed amount per wallet (open campaigns) |
+| Start / End | Optional time window |
+| Max claims per address | Defaults to 1 |
+| KYC restricted | If on, you must upload a recipient CSV before funding |
+
+After creation, fund the contract. The campaign goes `ACTIVE` once on-chain funding is confirmed.
+
+## Sharing the Claim Link
+
+Every campaign generates a unique claim link like `https://yourapp.com/claim/{token}`. Share it publicly or privately. Recipients click the link and claim with one wallet-signed transaction.
+
+## Managing a Campaign
+
+As the creator you can:
+
+- **Pause** — halt new claims while keeping the contract funded
+- **Resume** — reopen claims
+- **Cancel** — withdraw remaining unclaimed funds
+
+All three actions are on-chain and require a wallet signature.

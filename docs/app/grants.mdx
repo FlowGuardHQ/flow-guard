@@ -1,0 +1,31 @@
+---
+title: "Grants"
+description: "Milestone-based budget disbursement for funded projects and contractors."
+icon: "chart-gantt"
+---
+
+Grants (budget plans) release funds to a recipient in structured milestones. Each milestone unlocks after a set duration from the previous release, enforced by the on-chain covenant — no trust required.
+
+## Creating a Grant
+
+Navigate to **Grants → New Grant** and specify:
+
+| Field | Description |
+|-------|-------------|
+| Recipient | BCH P2PKH address |
+| Vault | The vault funding this grant |
+| Token | BCH or CashToken |
+| Milestones | Array of `{ amount, durationSeconds, description }` |
+| Cancelable | Whether unvested funds can be reclaimed |
+
+The entire grant amount is locked upfront in the budget covenant. Milestones unlock sequentially — the recipient cannot claim milestone 2 until milestone 1 has been released and its time period has elapsed.
+
+## Releasing a Milestone
+
+When a milestone period elapses, the recipient navigates to the grant and clicks **Release**. The app builds a release transaction and the wallet signs it. Multiple elapsed milestones can be claimed in a single transaction.
+
+## Cancelling a Grant
+
+The grant controller (vault creator) can cancel at any time. Released milestones are already in the recipient's wallet. Unreleased milestone funds return to the controller address.
+
+See [Create a Grant](/guides/grants/create) for the complete guide.

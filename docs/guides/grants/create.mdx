@@ -1,0 +1,38 @@
+---
+title: "Create a Grant"
+description: "Set up a milestone-based budget plan to fund a contractor or project from a vault."
+icon: "chart-gantt"
+---
+
+<Steps>
+  <Step title="Navigate to Grants">
+    Open a Vault and go to **Grants → New Grant**, or use **Grants → New Grant** in the main sidebar.
+  </Step>
+  <Step title="Set the recipient">
+    Enter the contractor's BCH P2PKH address and an optional display label.
+  </Step>
+  <Step title="Define milestones">
+    Add one or more milestones. Each milestone has:
+    - **Amount** — BCH or token amount released at this milestone
+    - **Duration** — seconds from the previous milestone (or `startDate` for the first) before funds can be released
+    - **Description** — optional label (e.g. "Design phase", "Beta delivery")
+
+    The total grant amount is the sum of all milestone amounts.
+  </Step>
+  <Step title="Configure options">
+    - **Token** — BCH or CashToken (provide token category)
+    - **Cancelable** — whether unreleased milestones can be reclaimed by the controller
+    - **Start date** — Unix timestamp for when the first milestone clock begins
+  </Step>
+  <Step title="Deploy and fund">
+    Click **Create Grant**. The backend deploys the BudgetCovenant and returns a funding `wcTransaction`. Sign it in your wallet. After broadcasting, click **Confirm Funding** with the transaction hash.
+  </Step>
+</Steps>
+
+## Milestone Clock
+
+After funding, the first milestone unlocks after `milestones[0].durationSeconds` from `startDate`. Each subsequent milestone unlocks after its `durationSeconds` from the moment the previous one was released.
+
+## Recipient Experience
+
+The recipient sees the grant under their **Receiving → Grants** tab. When a milestone is due, they click **Release** and sign the transaction. Multiple elapsed milestones can be batched into one transaction.

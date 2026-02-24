@@ -1,0 +1,55 @@
+---
+title: "Grant Milestones"
+description: "How milestones work in FlowGuard grants and how recipients release them."
+icon: "flag-checkered"
+---
+
+## How the Milestone Clock Works
+
+When a grant is funded, the covenant stores:
+
+- `startTime` — when the first milestone window begins
+- `stepInterval` — duration in seconds between milestones
+- `stepAmount` — on-chain token units per milestone
+- `totalReleased` — how much has already been released
+
+The CashScript covenant enforces:
+```
+elapsed = current_blocktime - lastReleaseTime
+milestonesElapsed = elapsed / stepInterval
+releasable = milestonesElapsed * stepAmount - totalReleased
+```
+
+## Releasing a Milestone
+
+<Steps>
+  <Step title="Open the grant">
+    In the recipient's dashboard go to **Grants → Receiving** and open the grant.
+  </Step>
+  <Step title="Check what is due">
+    The grant detail shows **Releasable amount** and **Milestones due**. These update in real time based on the current timestamp.
+  </Step>
+  <Step title="Release">
+    Click **Release Milestone**. The app calls `POST /api/budget-plans/:id/release` with your address. Multiple elapsed milestones are batched into one transaction.
+  </Step>
+  <Step title="Sign and confirm">
+    Sign the transaction in your wallet. After broadcast, the app calls `POST /api/budget-plans/:id/confirm-release` and advances `current_milestone`.
+  </Step>
+</Steps>
+
+## What Each Release Records
+
+Each released milestone writes a row to the `budget_releases` table with:
+
+| Field | Value |
+|-------|-------|
+| `milestone_index` | Index of the milestone released |
+| `amount` | Display amount released |
+| `released_at` | Unix timestamp |
+| `tx_hash` | On-chain transaction hash |
+
+The grant panel in the app shows the full release history as a timeline.
+
+## Early Release Not Possible
+
+The covenant enforces time. If a milestone has not elapsed, the `release` call returns `400: Nothing releasable yet`. There is no override — the contract itself prevents early release.
