@@ -8,7 +8,7 @@ COPY shared/package.json ./shared/package.json
 COPY shared/tsconfig.json ./shared/tsconfig.json
 COPY shared/ ./shared/
 
-COPY executor/package.json ./executor/package.json
+COPY backend/executor/package.json ./executor/package.json
 
 RUN printf '{"name":"flowguard","private":true,"version":"0.1.0"}' > package.json
 RUN printf '{"packages":["executor","shared"]}' > pnpm-workspace.yaml
@@ -20,7 +20,7 @@ RUN pnpm build
 WORKDIR /app/executor
 RUN pnpm install --no-frozen-lockfile
 
-COPY executor/ ./
+COPY backend/executor/ ./
 
 RUN pnpm build
 

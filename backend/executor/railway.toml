@@ -1,6 +1,6 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "executor/Dockerfile"
+dockerfilePath = "backend/executor/Dockerfile"
 
 [deploy]
 startCommand = "node dist/index.js"
