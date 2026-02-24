@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { VaultService } from '../services/vaultService.js';
 import { CreateVaultDto } from '../models/Vault.js';
+import { ElectrumNetworkProvider } from 'cashscript';
+import { transactionHasExpectedOutput } from '../utils/txVerification.js';
+import { VaultFundingService } from '../services/VaultFundingService.js';
+import { serializeWcTransaction } from '../utils/wcSerializer.js';
+import db from '../database/schema.js';
 
 const router = Router();
 
@@ -154,7 +159,7 @@ router.post('/:id/signers', (req, res) => {
 
 // Get deposit information for a vault
 // Returns contract address and amount details for frontend to use
-router.get('/:id/deposit', (req, res) => {
+router.get('/:id/deposit', async (req, res) => {
   try {
     const vault = VaultService.getVaultById(req.params.id);
     if (!vault) {
@@ -172,11 +177,51 @@ router.get('/:id/deposit', (req, res) => {
       return res.status(400).json({ error: 'Vault contract address not available' });
     }
 
+    const amountToDepositBch = Math.max(0, (vault.totalDeposit || 0) - (vault.balance || 0));
+    const amountToDepositSats = BigInt(Math.max(0, Math.floor(amountToDepositBch * 100000000)));
+
+    let fundingPayload: any = undefined;
+    let warning: string | undefined;
+
+    if (amountToDepositSats > 0n) {
+      const constructorParamsRow = db
+        .prepare('SELECT constructor_params FROM vaults WHERE id = ?')
+        .get(req.params.id) as any;
+
+      if (constructorParamsRow?.constructor_params) {
+        try {
+          const network = process.env.BCH_NETWORK as 'mainnet' | 'testnet3' | 'testnet4' | 'chipnet' || 'chipnet';
+          const fundingService = new VaultFundingService(network);
+          const built = await fundingService.buildInitialFundingTransaction({
+            constructorParamsJson: constructorParamsRow.constructor_params,
+            contractAddress: vault.contractAddress,
+            funderAddress: userAddress,
+            depositSatoshis: amountToDepositSats,
+          });
+
+          fundingPayload = {
+            wcTransaction: serializeWcTransaction(built.wcTransaction),
+            stateNft: {
+              tokenCategory: built.tokenCategory,
+              commitment: built.initialCommitment,
+            },
+            depositSatoshis: built.depositSatoshis.toString(),
+          };
+        } catch (error: any) {
+          warning = `State-NFT bootstrap transaction unavailable: ${error.message}`;
+        }
+      } else {
+        warning = 'Vault constructor parameters are missing; cannot build state-NFT bootstrap transaction.';
+      }
+    }
+
     res.json({
       contractAddress: vault.contractAddress,
       totalDeposit: vault.totalDeposit,
       currentBalance: vault.balance || 0,
-      amountToDeposit: vault.totalDeposit - (vault.balance || 0),
+      amountToDeposit: amountToDepositBch,
+      ...fundingPayload,
+      ...(warning ? { warning } : {}),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -184,13 +229,17 @@ router.get('/:id/deposit', (req, res) => {
 });
 
 // Update vault balance after deposit
-router.post('/:id/update-balance', (req, res) => {
+router.post('/:id/update-balance', async (req, res) => {
   try {
     const { txid, amount } = req.body;
     const userAddress = req.headers['x-user-address'] as string || 'unknown';
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: 'Valid amount is required' });
+    }
+
+    if (!txid) {
+      return res.status(400).json({ error: 'Transaction ID is required' });
     }
 
     const vault = VaultService.getVaultById(req.params.id);
@@ -201,6 +250,62 @@ router.post('/:id/update-balance', (req, res) => {
     // Only creator can update balance (for initial deposit)
     if (!VaultService.isCreator(vault, userAddress)) {
       return res.status(403).json({ error: 'Only the vault creator can update balance' });
+    }
+
+    // Verify transaction on blockchain
+    try {
+      const network = process.env.BCH_NETWORK as 'mainnet' | 'chipnet' || 'chipnet';
+      const provider = new ElectrumNetworkProvider(network);
+
+      // Get transaction details from blockchain
+      const txData = await provider.getRawTransaction(txid);
+
+      if (!txData) {
+        return res.status(400).json({
+          error: 'Transaction not found on blockchain. Please wait for confirmation and try again.'
+        });
+      }
+
+      // Verify transaction sends to vault contract address
+      if (!vault.contractAddress) {
+        return res.status(400).json({
+          error: 'Vault contract address not available'
+        });
+      }
+
+      const minSatoshis = BigInt(Math.max(546, Math.floor(amount * 100000000)));
+      const isInitialFunding = (vault.balance || 0) <= 0;
+      const hasExpectedOutput = await transactionHasExpectedOutput(
+        txid,
+        {
+          address: vault.contractAddress,
+          minimumSatoshis: minSatoshis,
+          ...(isInitialFunding
+            ? {
+                requireNft: true,
+                requiredNftCapability: 'mutable' as const,
+                minimumNftCommitmentBytes: 32,
+              }
+            : {}),
+        },
+        network === 'mainnet' ? 'mainnet' : 'chipnet',
+      );
+
+      if (!hasExpectedOutput) {
+        return res.status(400).json({
+          error: isInitialFunding
+            ? 'Initial vault funding transaction must include a mutable state NFT output to the vault contract'
+            : 'Transaction does not include expected vault funding output',
+        });
+      }
+
+      console.log(`Verified transaction ${txid} exists on ${network} network`);
+    } catch (verifyError: any) {
+      console.error('Blockchain verification failed:', verifyError);
+      return res.status(400).json({
+        error: 'Failed to verify transaction on blockchain. The transaction may not be confirmed yet.',
+        details: verifyError.message,
+      });
     }
 
     const updatedVault = VaultService.updateBalance(req.params.id, amount, txid);
@@ -214,4 +319,3 @@ router.post('/:id/update-balance', (req, res) => {
 });
 
 export default router;
-

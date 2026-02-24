@@ -3,8 +3,32 @@ import db from '../database/schema.js';
 import { getCycleUnlockScheduler } from '../services/cycle-unlock-scheduler.js';
 import { StateService } from '../services/state-service.js';
 import { VaultService } from '../services/vaultService.js';
+import { serializeWcTransaction } from '../utils/wcSerializer.js';
 
 const router = Router();
+
+async function unlockCyclePolicyState(
+  vaultId: string,
+  cycleNumber: number,
+  userAddress: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const vault = VaultService.getVaultByVaultId(vaultId);
+  if (!vault) {
+    return { ok: false, status: 404, error: 'Vault not found' };
+  }
+
+  if (!VaultService.isSigner(vault, userAddress)) {
+    return { ok: false, status: 403, error: 'Only signers can unlock cycles' };
+  }
+
+  const scheduler = getCycleUnlockScheduler();
+  const result = await scheduler.unlockCycle(vaultId, cycleNumber);
+  if (!result.unlocked) {
+    return { ok: false, status: 400, error: result.error || 'Failed to unlock cycle' };
+  }
+
+  return { ok: true };
+}
 
 // Get cycle history for a vault
 router.get('/vaults/:vaultId/cycles', (req, res) => {
@@ -72,27 +96,15 @@ router.post('/vaults/:vaultId/unlock', async (req, res) => {
       return res.status(400).json({ error: 'cycleNumber is required' });
     }
 
-    const vault = VaultService.getVaultByVaultId(vaultId);
-    if (!vault) {
-      return res.status(404).json({ error: 'Vault not found' });
-    }
-
-    // Verify user is a signer
-    if (!VaultService.isSigner(vault, userAddress)) {
-      return res.status(403).json({ error: 'Only signers can unlock cycles' });
-    }
-
-    const scheduler = getCycleUnlockScheduler();
-    const result = await scheduler.unlockCycle(vaultId, cycleNumber);
-
-    if (!result.unlocked) {
-      return res.status(400).json({ error: result.error || 'Failed to unlock cycle' });
+    const unlockResult = await unlockCyclePolicyState(vaultId, cycleNumber, userAddress);
+    if (!unlockResult.ok) {
+      return res.status(unlockResult.status).json({ error: unlockResult.error });
     }
 
     res.json({
       message: 'Cycle unlocked successfully',
-      vaultId: result.vaultId,
-      cycleNumber: result.cycleNumber,
+      vaultId,
+      cycleNumber,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -104,54 +116,37 @@ router.post('/vaults/:vaultId/unlock-onchain', async (req, res) => {
   try {
     const { cycleNumber } = req.body;
     const vaultId = req.params.vaultId;
-    const signerPublicKey = req.headers['x-signer-public-key'] as string;
+    const userAddress = req.headers['x-user-address'] as string || 'unknown';
 
     if (cycleNumber === undefined) {
       return res.status(400).json({ error: 'cycleNumber is required' });
     }
 
-    if (!signerPublicKey) {
-      return res.status(400).json({ error: 'Signer public key is required' });
-    }
-
     const vault = VaultService.getVaultByVaultId(vaultId);
-    if (!vault || !vault.contractAddress || !vault.signerPubkeys) {
-      return res.status(404).json({ error: 'Vault not found or missing contract information' });
+    if (!vault) {
+      return res.status(404).json({ error: 'Vault not found' });
+    }
+    if (!VaultService.isSigner(vault, userAddress)) {
+      return res.status(403).json({ error: 'Only signers can unlock cycles' });
     }
 
-    // Verify signer is authorized
-    const signerIndex = vault.signerPubkeys.findIndex(
-      pk => pk.toLowerCase() === signerPublicKey.toLowerCase()
-    );
-    if (signerIndex === -1) {
-      return res.status(403).json({ error: 'Signer not authorized' });
-    }
+    const scheduler = getCycleUnlockScheduler();
+    const built = await scheduler.createUnlockTransaction(vaultId, cycleNumber, undefined);
 
-    const currentState = vault.state || 0;
-    const vaultStartTime = vault.startTime ? Math.floor(vault.startTime.getTime() / 1000) : Math.floor(Date.now() / 1000);
+    const newState = StateService.setCycleUnlocked(vault.state || 0, cycleNumber);
+    VaultService.updateVaultState(vaultId, newState);
 
-    // Import ContractService
-    const { ContractService } = await import('../services/contract-service.js');
-    const contractService = new ContractService('chipnet');
-
-    // Create unlock transaction
-    const result = await contractService.createCycleUnlock(
-      vault.contractAddress,
+    return res.json({
+      success: true,
+      onChain: true,
+      executionMode: 'covenant',
+      vaultId,
       cycleNumber,
-      currentState,
-      vaultStartTime,
-      vault.cycleDuration,
-      vault.signerPubkeys,
-      vault.approvalThreshold,
-      vault.spendingCap * 100000000
-    );
-
-    res.json({
-      transaction: result.transaction,
-      newState: result.newState,
+      newPeriodId: built.newPeriodId,
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || 'Failed to process cycle unlock' });
   }
 });
 
@@ -185,4 +180,3 @@ router.get('/vaults/:vaultId/cycles/eligible', (req, res) => {
 });
 
 export default router;
-

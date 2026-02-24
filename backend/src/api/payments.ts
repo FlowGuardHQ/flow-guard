@@ -1,0 +1,869 @@
+/**
+ * Payments API Endpoints
+ * Handles recurring payment operations
+ */
+
+import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
+import { cashAddressToLockingBytecode } from '@bitauth/libauth';
+import db from '../database/schema.js';
+import { PaymentDeploymentService } from '../services/PaymentDeploymentService.js';
+import { PaymentFundingService } from '../services/PaymentFundingService.js';
+import { PaymentClaimService } from '../services/PaymentClaimService.js';
+import { PaymentControlService } from '../services/PaymentControlService.js';
+import { ContractService } from '../services/contract-service.js';
+import { transactionExists, transactionHasExpectedOutput } from '../utils/txVerification.js';
+import { serializeWcTransaction } from '../utils/wcSerializer.js';
+import { hexToBin, lockingBytecodeToCashAddress } from '@bitauth/libauth';
+import {
+  displayAmountToOnChain,
+  isFungibleTokenType,
+  onChainAmountToDisplay,
+} from '../utils/amounts.js';
+
+const router = Router();
+
+const INTERVAL_SECONDS: Record<string, number> = {
+  DAILY: 86400,
+  WEEKLY: 604800,
+  BIWEEKLY: 1209600,
+  MONTHLY: 2592000,
+  YEARLY: 31536000,
+};
+
+/**
+ * GET /api/payments
+ * List recurring payments for sender or recipient
+ */
+router.get('/payments', async (req: Request, res: Response) => {
+  try {
+    const { sender, recipient } = req.query;
+
+    if (!sender && !recipient) {
+      return res.status(400).json({
+        error: 'Must provide either sender or recipient parameter',
+      });
+    }
+
+    let rows: any[];
+    if (sender && recipient) {
+      rows = db!.prepare('SELECT * FROM payments WHERE sender = ? AND recipient = ? ORDER BY created_at DESC').all(sender, recipient);
+    } else if (sender) {
+      rows = db!.prepare('SELECT * FROM payments WHERE sender = ? ORDER BY created_at DESC').all(sender);
+    } else {
+      rows = db!.prepare('SELECT * FROM payments WHERE recipient = ? ORDER BY created_at DESC').all(recipient);
+    }
+
+    res.json({
+      success: true,
+      payments: rows,
+      total: rows.length,
+    });
+  } catch (error: any) {
+    console.error('GET /payments error:', error);
+    res.status(500).json({ error: 'Failed to fetch payments', message: error.message });
+  }
+});
+
+/**
+ * GET /api/payments/:id
+ * Get single payment details with execution history
+ */
+router.get('/payments/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const history = db!.prepare('SELECT * FROM payment_executions WHERE payment_id = ? ORDER BY paid_at DESC').all(id);
+
+    res.json({
+      success: true,
+      payment,
+      history,
+    });
+  } catch (error: any) {
+    console.error(`GET /payments/${req.params.id} error:`, error);
+    res.status(500).json({ error: 'Failed to fetch payment', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/create
+ * Create a new recurring payment
+ */
+router.post('/payments/create', async (req: Request, res: Response) => {
+  try {
+    const {
+      sender,
+      recipient,
+      recipientName,
+      tokenType,
+      tokenCategory,
+      amountPerPeriod,
+      interval,
+      startDate,
+      endDate,
+      cancelable,
+      pausable,
+      vaultId,
+    } = req.body;
+    const normalizedTokenType = tokenType === 'FUNGIBLE_TOKEN' || tokenType === 'CASHTOKENS'
+      ? 'FUNGIBLE_TOKEN'
+      : 'BCH';
+
+    if (!sender || !recipient) {
+      return res.status(400).json({ error: 'Sender and recipient are required' });
+    }
+    if (!amountPerPeriod || amountPerPeriod <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+    if (!['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY', 'YEARLY'].includes(interval)) {
+      return res.status(400).json({ error: 'Invalid payment interval' });
+    }
+    if (!isP2pkhAddress(sender) || !isP2pkhAddress(recipient)) {
+      return res.status(400).json({
+        error: 'Invalid address type',
+        message: 'Payment sender and recipient must be P2PKH cash addresses.',
+      });
+    }
+
+    const id = randomUUID();
+    const countRow = db!.prepare('SELECT COUNT(*) as cnt FROM payments').get() as any;
+    const paymentId = `#FG-PAY-${String((countRow?.cnt ?? 0) + 1).padStart(3, '0')}`;
+    const now = Math.floor(Date.now() / 1000);
+    const start = startDate || now;
+    const intervalSeconds = INTERVAL_SECONDS[interval];
+    const cancelableEnabled = cancelable !== false;
+
+    // Deploy payment contract
+    const deploymentService = new PaymentDeploymentService('chipnet');
+    const deployment = await deploymentService.deployRecurringPayment({
+      vaultId: vaultId || '0000000000000000000000000000000000000000000000000000000000000000',
+      sender,
+      recipient,
+      amountPerInterval: amountPerPeriod,
+      interval: interval as 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'YEARLY',
+      intervalSeconds,
+      startTime: start,
+      endTime: endDate || 0,
+      cancelable: cancelableEnabled,
+      pausable: pausable !== false,
+      tokenType: normalizedTokenType,
+      tokenCategory,
+    });
+
+    // Store with PENDING status - becomes ACTIVE after funding
+    db!.prepare(`
+      INSERT INTO payments (id, payment_id, vault_id, sender, recipient, recipient_name,
+        token_type, token_category, amount_per_period, interval, interval_seconds,
+        start_date, end_date, next_payment_date, total_paid, payment_count, status,
+        pausable, created_at, updated_at, contract_address, constructor_params,
+        nft_commitment, nft_capability)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'PENDING', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, paymentId, vaultId || null, sender, recipient,
+      recipientName || null,
+      normalizedTokenType, tokenCategory || null,
+      amountPerPeriod, interval, intervalSeconds,
+      start, endDate || null, start + intervalSeconds,
+      pausable !== false ? 1 : 0,
+      now, now,
+      deployment.contractAddress,
+      JSON.stringify(deployment.constructorParams),
+      deployment.initialCommitment,
+      'mutable'
+    );
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id);
+
+    res.json({
+      success: true,
+      message: 'Recurring payment contract deployed. Fund to activate.',
+      payment,
+      deployment: {
+        contractAddress: deployment.contractAddress,
+        paymentId: deployment.paymentId,
+        fundingRequired: deployment.fundingTxRequired,
+        cancelable: cancelableEnabled,
+      },
+    });
+  } catch (error: any) {
+    console.error('POST /payments/create error:', error);
+    res.status(500).json({ error: 'Failed to create payment', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/pause
+ * Build on-chain pause transaction for recurring payment
+ */
+router.post('/payments/:id/pause', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+    if (payment.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Only active payments can be paused' });
+    }
+    if (String(payment.sender).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the payment sender can pause this payment' });
+    }
+    if (!payment.contract_address || !payment.constructor_params) {
+      return res.status(400).json({ error: 'Payment contract is not fully configured' });
+    }
+
+    const controlService = new PaymentControlService('chipnet');
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(payment.contract_address)
+      || payment.nft_commitment
+      || '';
+    const constructorParams = deserializeConstructorParams(payment.constructor_params);
+    const built = await controlService.buildPauseTransaction({
+      contractAddress: payment.contract_address,
+      constructorParams,
+      currentCommitment,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenType: normalizePaymentTokenType(payment.token_type),
+      tokenCategory: payment.token_category || undefined,
+    });
+
+    res.json({
+      success: true,
+      nextStatus: built.nextStatus,
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/pause error:`, error);
+    res.status(500).json({ error: 'Failed to build pause transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/resume
+ * Build on-chain resume transaction for recurring payment
+ */
+router.post('/payments/:id/resume', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+    if (payment.status !== 'PAUSED') {
+      return res.status(400).json({ error: 'Only paused payments can be resumed' });
+    }
+    if (String(payment.sender).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the payment sender can resume this payment' });
+    }
+    if (!payment.contract_address || !payment.constructor_params) {
+      return res.status(400).json({ error: 'Payment contract is not fully configured' });
+    }
+
+    const controlService = new PaymentControlService('chipnet');
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(payment.contract_address)
+      || payment.nft_commitment
+      || '';
+    const constructorParams = deserializeConstructorParams(payment.constructor_params);
+    const built = await controlService.buildResumeTransaction({
+      contractAddress: payment.contract_address,
+      constructorParams,
+      currentCommitment,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenType: normalizePaymentTokenType(payment.token_type),
+      tokenCategory: payment.token_category || undefined,
+    });
+
+    res.json({
+      success: true,
+      nextStatus: built.nextStatus,
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/resume error:`, error);
+    res.status(500).json({ error: 'Failed to build resume transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/cancel
+ * Build on-chain cancel transaction for recurring payment
+ */
+router.post('/payments/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+    if (payment.status === 'CANCELLED') {
+      return res.status(400).json({ error: 'Payment is already cancelled' });
+    }
+    if (String(payment.sender).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the payment sender can cancel this payment' });
+    }
+    if (!payment.contract_address || !payment.constructor_params) {
+      return res.status(400).json({ error: 'Payment contract is not fully configured' });
+    }
+
+    const controlService = new PaymentControlService('chipnet');
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(payment.contract_address)
+      || payment.nft_commitment
+      || '';
+    const constructorParams = deserializeConstructorParams(payment.constructor_params);
+    const built = await controlService.buildCancelTransaction({
+      contractAddress: payment.contract_address,
+      constructorParams,
+      currentCommitment,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenType: normalizePaymentTokenType(payment.token_type),
+      tokenCategory: payment.token_category || undefined,
+    });
+
+    res.json({
+      success: true,
+      nextStatus: built.nextStatus,
+      senderReturnAddress: built.senderReturnAddress,
+      remainingPool: built.remainingPool?.toString() || '0',
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/cancel error:`, error);
+    res.status(500).json({ error: 'Failed to build cancel transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/confirm-pause
+ * Confirm on-chain pause transaction and update DB state
+ */
+router.post('/payments/:id/confirm-pause', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const hasExpectedState = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: payment.contract_address,
+        minimumSatoshis: 546n,
+        requireNft: true,
+        requiredNftCapability: 'mutable',
+        minimumNftCommitmentBytes: 35,
+      },
+      'chipnet',
+    );
+    if (!hasExpectedState) {
+      return res.status(400).json({
+        error: 'Pause transaction does not include expected payment covenant state output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    db!.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?')
+      .run('PAUSED', now, id);
+
+    res.json({ success: true, txHash, status: 'PAUSED' });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/confirm-pause error:`, error);
+    res.status(500).json({ error: 'Failed to confirm pause', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/confirm-resume
+ * Confirm on-chain resume transaction and update DB state
+ */
+router.post('/payments/:id/confirm-resume', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const hasExpectedState = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: payment.contract_address,
+        minimumSatoshis: 546n,
+        requireNft: true,
+        requiredNftCapability: 'mutable',
+        minimumNftCommitmentBytes: 40,
+      },
+      'chipnet',
+    );
+    if (!hasExpectedState) {
+      return res.status(400).json({
+        error: 'Resume transaction does not include expected payment covenant state output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const nextPaymentDate = now + Number(payment.interval_seconds || 0);
+    db!.prepare('UPDATE payments SET status = ?, next_payment_date = ?, updated_at = ? WHERE id = ?')
+      .run('ACTIVE', nextPaymentDate, now, id);
+
+    res.json({ success: true, txHash, status: 'ACTIVE' });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/confirm-resume error:`, error);
+    res.status(500).json({ error: 'Failed to confirm resume', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/confirm-cancel
+ * Confirm on-chain cancel transaction and update DB state
+ */
+router.post('/payments/:id/confirm-cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const constructorParams = deserializeConstructorParams(payment.constructor_params || '[]');
+    const senderHash = readBytes20(constructorParams[1], 'senderHash');
+    const senderReturnAddress = hashToP2pkhAddress(senderHash);
+    const totalAmount = toBigIntParam(constructorParams[5], 'totalAmount');
+    const totalPaid = BigInt(displayAmountToOnChain(Number(payment.total_paid || 0), payment.token_type));
+    const remainingPool = totalAmount > 0n ? (totalAmount - totalPaid > 0n ? totalAmount - totalPaid : 0n) : 0n;
+
+    if (remainingPool > 0n) {
+      const isTokenPayment = isFungibleTokenType(payment.token_type);
+      const hasExpectedRefund = await transactionHasExpectedOutput(
+        txHash,
+        {
+          address: senderReturnAddress,
+          minimumSatoshis: BigInt(isTokenPayment ? 546 : Number(remainingPool)),
+          ...(isTokenPayment && payment.token_category
+            ? {
+                tokenCategory: payment.token_category,
+                minimumTokenAmount: remainingPool,
+              }
+            : {}),
+        },
+        'chipnet',
+      );
+      if (!hasExpectedRefund) {
+        return res.status(400).json({
+          error: 'Cancel transaction does not include expected refund output',
+        });
+      }
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    db!.prepare('UPDATE payments SET status = ?, updated_at = ? WHERE id = ?')
+      .run('CANCELLED', now, id);
+
+    res.json({ success: true, txHash, status: 'CANCELLED' });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/confirm-cancel error:`, error);
+    res.status(500).json({ error: 'Failed to confirm cancel', message: error.message });
+  }
+});
+
+/**
+ * GET /api/payments/:id/funding-info
+ * Get funding transaction parameters
+ */
+router.get('/payments/:id/funding-info', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (!payment.contract_address) {
+      return res.status(400).json({ error: 'Payment contract not deployed' });
+    }
+
+    const fundedPeriods = 12;
+    const fundingAmountDisplay = Number(payment.amount_per_period) * fundedPeriods;
+    const fundingAmountOnChain = displayAmountToOnChain(fundingAmountDisplay, payment.token_type);
+
+    // Build funding transaction
+    const fundingService = new PaymentFundingService('chipnet');
+    const fundingTx = await fundingService.buildFundingTransaction({
+      contractAddress: payment.contract_address,
+      senderAddress: payment.sender,
+      amount: fundingAmountOnChain,
+      tokenType: normalizePaymentTokenType(payment.token_type),
+      tokenCategory: payment.token_category,
+      nftCommitment: payment.nft_commitment || '',
+      nftCapability: 'mutable',
+    });
+
+    res.json({
+      success: true,
+      fundingInfo: {
+        contractAddress: payment.contract_address,
+        amount: fundingAmountDisplay,
+        onChainAmount: fundingAmountOnChain,
+        tokenType: payment.token_type,
+        inputs: fundingTx.inputs,
+        outputs: fundingTx.outputs,
+        fee: fundingTx.fee,
+      },
+      wcTransaction: serializeWcTransaction(fundingTx.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`GET /payments/${req.params.id}/funding-info error:`, error);
+    res.status(500).json({ error: 'Failed to get funding info', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/confirm-funding
+ * Confirm payment contract funding
+ */
+router.post('/payments/:id/confirm-funding', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const fundedPeriods = 12;
+    const fundingAmountOnChain = displayAmountToOnChain(
+      Number(payment.amount_per_period) * fundedPeriods,
+      payment.token_type,
+    );
+    const isTokenPayment = isFungibleTokenType(payment.token_type);
+
+    const expectedContractOutput = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: payment.contract_address,
+        minimumSatoshis: BigInt(isTokenPayment ? 546 : Math.max(546, fundingAmountOnChain)),
+        ...(isTokenPayment && payment.token_category
+          ? {
+              tokenCategory: payment.token_category,
+              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(fundingAmountOnChain))),
+            }
+          : {}),
+        requireNft: true,
+        requiredNftCapability: 'mutable',
+        minimumNftCommitmentBytes: 32,
+      },
+      'chipnet',
+    );
+
+    if (!expectedContractOutput) {
+      return res.status(400).json({
+        error: 'Funding transaction does not include the expected contract output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+
+    // Update payment with tx_hash and set status to ACTIVE
+    db!.prepare(`
+      UPDATE payments
+      SET tx_hash = ?, status = 'ACTIVE', updated_at = ?
+      WHERE id = ?
+    `).run(txHash, now, id);
+
+    res.json({
+      success: true,
+      message: 'Payment funding confirmed',
+      txHash,
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/confirm-funding error:`, error);
+    res.status(500).json({ error: 'Failed to confirm funding', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/claim
+ * Build claim transaction for payment
+ */
+router.post('/payments/:id/claim', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { recipientAddress } = req.body;
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    if (payment.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Payment is not active' });
+    }
+    if (!payment.contract_address || !payment.constructor_params) {
+      return res.status(400).json({
+        error: 'Payment contract is not fully configured',
+        message: 'This payment has no deployable on-chain contract state.',
+      });
+    }
+
+    if (payment.recipient.toLowerCase() !== recipientAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the payment recipient can claim' });
+    }
+
+    const amountPerIntervalOnChain = displayAmountToOnChain(payment.amount_per_period, payment.token_type);
+    const totalPaidOnChain = displayAmountToOnChain(payment.total_paid || 0, payment.token_type);
+    const constructorParams = JSON.parse(payment.constructor_params || '[]');
+    const now = Math.floor(Date.now() / 1000);
+
+    // Fetch current NFT commitment from blockchain
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(payment.contract_address)
+      || payment.nft_commitment
+      || '';
+
+    // Build claim transaction
+    const claimService = new PaymentClaimService('chipnet');
+    const claimTx = await claimService.buildClaimTransaction({
+      paymentId: payment.payment_id,
+      contractAddress: payment.contract_address,
+      recipient: payment.recipient,
+      amountPerInterval: amountPerIntervalOnChain,
+      intervalSeconds: payment.interval_seconds,
+      totalPaid: totalPaidOnChain,
+      nextPaymentTime: Number(payment.next_payment_date || (now + Number(payment.interval_seconds || 0))),
+      currentTime: now,
+      endTime: payment.end_date,
+      tokenType: normalizePaymentTokenType(payment.token_type),
+      tokenCategory: payment.token_category,
+      constructorParams: constructorParams.map((p: any) => {
+        if (p.type === 'bytes') return Buffer.from(p.value, 'hex');
+        if (p.type === 'bigint') return BigInt(p.value);
+        return p.value;
+      }),
+      currentCommitment,
+    });
+
+    const claimedDisplayAmount = onChainAmountToDisplay(claimTx.claimableAmount, payment.token_type);
+
+    res.json({
+      success: true,
+      claimableAmount: claimedDisplayAmount,
+      intervalsClaimable: claimTx.intervalsClaimable,
+      wcTransaction: serializeWcTransaction(claimTx.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/claim error:`, error);
+    res.status(500).json({ error: 'Failed to build claim transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/payments/:id/confirm-claim
+ * Confirm payment claim
+ */
+router.post('/payments/:id/confirm-claim', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { claimedAmount, txHash, intervalsClaimed } = req.body;
+
+    if (!claimedAmount || !txHash) {
+      return res.status(400).json({ error: 'Claimed amount and transaction hash are required' });
+    }
+
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const payment = db!.prepare('SELECT * FROM payments WHERE id = ?').get(id) as any;
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    const claimedAmountNumber = Number(claimedAmount);
+    const claimedAmountOnChain = displayAmountToOnChain(claimedAmountNumber, payment.token_type);
+    const isTokenPayment = isFungibleTokenType(payment.token_type);
+
+    const expectedRecipientOutput = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: payment.recipient,
+        minimumSatoshis: BigInt(isTokenPayment ? 546 : Math.max(546, claimedAmountOnChain)),
+        ...(isTokenPayment && payment.token_category
+          ? {
+              tokenCategory: payment.token_category,
+              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(claimedAmountOnChain))),
+            }
+          : {}),
+      },
+      'chipnet',
+    );
+
+    if (!expectedRecipientOutput) {
+      return res.status(400).json({
+        error: 'Claim transaction does not include the expected recipient output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const newTotalPaid = Number(payment.total_paid || 0) + claimedAmountNumber;
+    const normalizedIntervals = Math.max(1, Math.trunc(Number(intervalsClaimed ?? 1)));
+    const newPaymentCount = (payment.payment_count || 0) + normalizedIntervals;
+    const nextPaymentDate = (payment.next_payment_date || now) + (normalizedIntervals * payment.interval_seconds);
+
+    // Update payment statistics
+    db!.prepare(`
+      UPDATE payments
+      SET total_paid = ?, payment_count = ?, next_payment_date = ?, updated_at = ?
+      WHERE id = ?
+    `).run(newTotalPaid, newPaymentCount, nextPaymentDate, now, id);
+
+    // Record claim in payment_executions table (if it exists)
+    try {
+      db!.prepare(`
+        INSERT INTO payment_executions (id, payment_id, amount, paid_at, tx_hash)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(randomUUID(), id, claimedAmountNumber, now, txHash);
+    } catch (e) {
+      // Table might not exist, ignore
+      console.log('payment_executions table not found, skipping record');
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment claim confirmed',
+      txHash,
+      totalPaid: newTotalPaid,
+      paymentCount: newPaymentCount,
+      intervalsClaimed: normalizedIntervals,
+    });
+  } catch (error: any) {
+    console.error(`POST /payments/${req.params.id}/confirm-claim error:`, error);
+    res.status(500).json({ error: 'Failed to confirm claim', message: error.message });
+  }
+});
+
+export default router;
+
+function normalizePaymentTokenType(tokenType: unknown): 'BCH' | 'FUNGIBLE_TOKEN' {
+  return tokenType === 'FUNGIBLE_TOKEN' || tokenType === 'CASHTOKENS'
+    ? 'FUNGIBLE_TOKEN'
+    : 'BCH';
+}
+
+function deserializeConstructorParams(raw: string): any[] {
+  const parsed = JSON.parse(raw || '[]');
+  return parsed.map((param: any) => {
+    if (param && typeof param === 'object') {
+      if (param.type === 'bytes') return hexToBin(param.value);
+      if (param.type === 'bigint') return BigInt(param.value);
+      if (param.type === 'boolean') return param.value === true || param.value === 'true';
+      return param.value;
+    }
+    return param;
+  });
+}
+
+function readBytes20(value: unknown, name: string): Uint8Array {
+  if (!(value instanceof Uint8Array) || value.length !== 20) {
+    throw new Error(`Invalid ${name} in constructor parameters`);
+  }
+  return value;
+}
+
+function toBigIntParam(value: unknown, name: string): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return BigInt(Math.trunc(value));
+  if (typeof value === 'string' && value.length > 0) return BigInt(value);
+  throw new Error(`Invalid ${name} in constructor parameters`);
+}
+
+function hashToP2pkhAddress(hash20: Uint8Array): string {
+  const lockingBytecode = new Uint8Array(25);
+  lockingBytecode[0] = 0x76;
+  lockingBytecode[1] = 0xa9;
+  lockingBytecode[2] = 0x14;
+  lockingBytecode.set(hash20, 3);
+  lockingBytecode[23] = 0x88;
+  lockingBytecode[24] = 0xac;
+  const encoded = lockingBytecodeToCashAddress({
+    bytecode: lockingBytecode,
+    prefix: 'bchtest',
+  });
+  if (typeof encoded === 'string') {
+    throw new Error(`Failed to encode sender P2PKH address: ${encoded}`);
+  }
+  return encoded.address;
+}
+
+function isP2pkhAddress(address: string): boolean {
+  const decoded = cashAddressToLockingBytecode(address);
+  if (typeof decoded === 'string') return false;
+  const b = decoded.bytecode;
+  return (
+    b.length === 25 &&
+    b[0] === 0x76 &&
+    b[1] === 0xa9 &&
+    b[2] === 0x14 &&
+    b[23] === 0x88 &&
+    b[24] === 0xac
+  );
+}

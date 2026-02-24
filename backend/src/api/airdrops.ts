@@ -1,0 +1,959 @@
+/**
+ * Airdrops API Endpoints
+ * Handles mass distribution campaigns
+ */
+
+import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
+import { hexToBin, lockingBytecodeToCashAddress } from '@bitauth/libauth';
+import db from '../database/schema.js';
+import { AirdropDeploymentService } from '../services/AirdropDeploymentService.js';
+import { MerkleTreeService } from '../services/MerkleTreeService.js';
+import { AirdropFundingService } from '../services/AirdropFundingService.js';
+import { AirdropClaimService } from '../services/AirdropClaimService.js';
+import { AirdropControlService } from '../services/AirdropControlService.js';
+import { ContractService } from '../services/contract-service.js';
+import { transactionExists, transactionHasExpectedOutput } from '../utils/txVerification.js';
+import { serializeWcTransaction } from '../utils/wcSerializer.js';
+import {
+  displayAmountToOnChain,
+  isFungibleTokenType,
+  onChainAmountToDisplay,
+} from '../utils/amounts.js';
+
+const router = Router();
+
+/**
+ * GET /api/airdrops
+ * List campaigns created by address
+ */
+router.get('/airdrops', async (req: Request, res: Response) => {
+  try {
+    const { creator } = req.query;
+
+    if (!creator) {
+      return res.status(400).json({ error: 'Creator address is required' });
+    }
+
+    const rows = db!.prepare('SELECT * FROM airdrops WHERE creator = ? ORDER BY created_at DESC').all(creator);
+
+    res.json({
+      success: true,
+      campaigns: rows,
+      total: rows.length,
+    });
+  } catch (error: any) {
+    console.error('GET /airdrops error:', error);
+    res.status(500).json({ error: 'Failed to fetch campaigns', message: error.message });
+  }
+});
+
+/**
+ * GET /api/airdrops/claimable
+ * List campaigns available for address to claim
+ */
+router.get('/airdrops/claimable', async (req: Request, res: Response) => {
+  try {
+    const { address } = req.query;
+
+    if (!address) {
+      return res.status(400).json({ error: 'Address is required' });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const rows = db!.prepare(`
+      SELECT a.* FROM airdrops a
+      WHERE a.status = 'ACTIVE'
+        AND (a.end_date IS NULL OR a.end_date > ?)
+        AND (
+          SELECT COUNT(1) FROM airdrop_claims c
+          WHERE c.campaign_id = a.id AND c.claimer = ?
+        ) < COALESCE(a.max_claims_per_address, 1)
+    `).all(now, address);
+
+    res.json({
+      success: true,
+      campaigns: rows,
+      total: rows.length,
+    });
+  } catch (error: any) {
+    console.error('GET /airdrops/claimable error:', error);
+    res.status(500).json({ error: 'Failed to fetch claimable campaigns', message: error.message });
+  }
+});
+
+/**
+ * GET /api/airdrops/claim/:token
+ * Resolve claim-link token to campaign id/details
+ */
+router.get('/airdrops/claim/:token', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.params;
+    if (!/^[a-zA-Z0-9-]{8,128}$/.test(token)) {
+      return res.status(400).json({ error: 'Invalid claim token format' });
+    }
+
+    const campaign = db!
+      .prepare('SELECT * FROM airdrops WHERE claim_link LIKE ? LIMIT 1')
+      .get(`%/claim/${token}`) as any;
+
+    if (!campaign) {
+      return res.status(404).json({ error: 'Claim campaign not found' });
+    }
+
+    return res.json({
+      success: true,
+      campaignId: campaign.id,
+      campaign,
+    });
+  } catch (error: any) {
+    console.error(`GET /airdrops/claim/${req.params.token} error:`, error);
+    return res.status(500).json({ error: 'Failed to resolve claim link', message: error.message });
+  }
+});
+
+/**
+ * GET /api/airdrops/:id
+ * Get campaign details with claim history
+ */
+router.get('/airdrops/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const claims = db!.prepare('SELECT * FROM airdrop_claims WHERE campaign_id = ? ORDER BY claimed_at DESC').all(id);
+
+    res.json({
+      success: true,
+      campaign,
+      claims,
+    });
+  } catch (error: any) {
+    console.error(`GET /airdrops/${req.params.id} error:`, error);
+    res.status(500).json({ error: 'Failed to fetch campaign', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/create
+ * Create a new airdrop campaign
+ */
+router.post('/airdrops/create', async (req: Request, res: Response) => {
+  try {
+    const {
+      creator,
+      title,
+      description,
+      campaignType,
+      tokenType,
+      tokenCategory,
+      totalAmount,
+      amountPerClaim,
+      recipients,
+      startDate,
+      endDate,
+      requireKyc,
+      maxClaimsPerAddress,
+      vaultId,
+    } = req.body;
+    const normalizedTokenType = tokenType === 'FUNGIBLE_TOKEN' || tokenType === 'CASHTOKENS'
+      ? 'FUNGIBLE_TOKEN'
+      : 'BCH';
+
+    if (!creator) {
+      return res.status(400).json({ error: 'Creator address is required' });
+    }
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    if (!totalAmount || totalAmount <= 0) {
+      return res.status(400).json({ error: 'Total amount must be greater than 0' });
+    }
+    if (!amountPerClaim || amountPerClaim <= 0) {
+      return res.status(400).json({ error: 'Amount per claim must be greater than 0' });
+    }
+
+    const totalRecipients = Array.isArray(recipients)
+      ? recipients.length
+      : Math.floor(totalAmount / amountPerClaim);
+
+    const id = randomUUID();
+    const countRow = db!.prepare('SELECT COUNT(*) as cnt FROM airdrops').get() as any;
+    const campaignId = `#FG-DROP-${String((countRow?.cnt ?? 0) + 1).padStart(3, '0')}`;
+    const now = Math.floor(Date.now() / 1000);
+    const claimToken = randomUUID();
+    const claimLink = `${process.env.APP_URL || 'http://localhost:5173'}/claim/${claimToken}`;
+
+    // Deploy airdrop contract with proper NFT state
+    const deploymentService = new AirdropDeploymentService('chipnet');
+
+    // Get vault's contract vaultId
+    let actualVaultId = '0000000000000000000000000000000000000000000000000000000000000000';
+    if (vaultId) {
+      const vaultRow = db!.prepare('SELECT * FROM vaults WHERE vault_id = ?').get(vaultId) as any;
+      if (vaultRow?.constructor_params) {
+        const vaultParams = JSON.parse(vaultRow.constructor_params);
+        if (vaultParams[0]?.type === 'bytes') {
+          actualVaultId = vaultParams[0].value;
+        }
+      }
+    }
+
+    // Authority controls admin paths (pause/resume/cancel). Claims are claimer-signed.
+    const deployment = await deploymentService.deployAirdrop({
+      vaultId: actualVaultId,
+      authorityAddress: creator,
+      amountPerClaim,
+      totalAmount,
+      startTime: startDate || 0,
+      endTime: endDate || 0,
+      tokenType: normalizedTokenType,
+      tokenCategory,
+    });
+
+    // Store with PENDING status - becomes ACTIVE after funding tx confirmed
+    db!.prepare(`
+      INSERT INTO airdrops (id, campaign_id, vault_id, creator, title, description,
+        campaign_type, token_type, token_category, total_amount, amount_per_claim,
+        total_recipients, claimed_count, claim_link, start_date, end_date, status,
+        require_kyc, max_claims_per_address, created_at, updated_at,
+        contract_address, constructor_params, nft_commitment, nft_capability)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, deployment.campaignId, vaultId || null, creator, title, description || null,
+      campaignType || 'AIRDROP', normalizedTokenType, tokenCategory || null,
+      totalAmount, amountPerClaim, totalRecipients, claimLink,
+      startDate || now, endDate || null,
+      requireKyc === true ? 1 : 0, maxClaimsPerAddress || 1,
+      now, now,
+      deployment.contractAddress,
+      JSON.stringify(deployment.constructorParams),
+      deployment.initialCommitment,
+      'mutable',
+    );
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id);
+
+    res.json({
+      success: true,
+      message: 'Airdrop contract deployed - awaiting funding transaction',
+      campaign,
+      deployment: {
+        contractAddress: deployment.contractAddress,
+        fundingRequired: deployment.fundingTxRequired,
+        nftCommitment: deployment.initialCommitment,
+      },
+    });
+  } catch (error: any) {
+    console.error('POST /airdrops/create error:', error);
+    res.status(500).json({ error: 'Failed to create campaign', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/generate-merkle
+ * Generate merkle tree from recipients list
+ */
+router.post('/airdrops/:id/generate-merkle', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { recipients } = req.body;
+
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      return res.status(400).json({ error: 'Recipients array is required' });
+    }
+
+    // Validate each recipient has a valid BCH address and a positive amount
+    const { decodeCashAddress } = await import('@bitauth/libauth');
+    const invalid = recipients.find((r: any) => {
+      if (!r.address || typeof r.address !== 'string') return true;
+      if (!r.amount || Number(r.amount) <= 0) return true;
+      const decoded = decodeCashAddress(r.address);
+      return typeof decoded === 'string'; // decodeCashAddress returns error string on failure
+    });
+    if (invalid) {
+      return res.status(400).json({
+        error: 'Invalid recipient',
+        message: `Each recipient must have a valid BCH address and a positive amount. Invalid: ${JSON.stringify(invalid)}`,
+      });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    // Generate merkle tree
+    const merkleService = new MerkleTreeService();
+    const tree = merkleService.generateMerkleTree(recipients);
+
+    // Store merkle root and recipients data
+    const now = Math.floor(Date.now() / 1000);
+    db!.prepare(`
+      UPDATE airdrops
+      SET merkle_root = ?, merkle_data = ?, total_recipients = ?, updated_at = ?
+      WHERE id = ?
+    `).run(tree.root, JSON.stringify({ recipients, proofs: Array.from(tree.proofs.entries()) }), recipients.length, now, id);
+
+    res.json({
+      success: true,
+      message: 'Merkle tree generated',
+      merkleRoot: tree.root,
+      totalRecipients: recipients.length,
+      leaves: tree.leaves,
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/generate-merkle error:`, error);
+    res.status(500).json({ error: 'Failed to generate merkle tree', message: error.message });
+  }
+});
+
+/**
+ * GET /api/airdrops/:id/funding-info
+ * Get funding transaction parameters
+ */
+router.get('/airdrops/:id/funding-info', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    if (!campaign.contract_address) {
+      return res.status(400).json({ error: 'Campaign contract not deployed' });
+    }
+
+    const requiresMerkle = Boolean(campaign.require_kyc);
+    if (requiresMerkle && !campaign.merkle_root) {
+      return res.status(400).json({
+        error: 'Merkle tree not generated yet',
+        message: 'KYC-restricted campaigns require a merkle tree before funding.',
+      });
+    }
+
+    const fundingAmountOnChain = displayAmountToOnChain(campaign.total_amount, campaign.token_type);
+    const nftCommitment = campaign.nft_commitment || '';
+
+    // Build funding transaction
+    const fundingService = new AirdropFundingService('chipnet');
+    const fundingTx = await fundingService.buildFundingTransaction({
+      contractAddress: campaign.contract_address,
+      creatorAddress: campaign.creator,
+      totalAmount: fundingAmountOnChain,
+      merkleRoot: campaign.merkle_root,
+      tokenType: normalizeAirdropTokenType(campaign.token_type),
+      tokenCategory: campaign.token_category,
+      nftCommitment,
+      nftCapability: 'mutable',
+    });
+
+    res.json({
+      success: true,
+      fundingInfo: {
+        contractAddress: campaign.contract_address,
+        totalAmount: campaign.total_amount,
+        onChainAmount: fundingAmountOnChain,
+        tokenType: campaign.token_type,
+        merkleRoot: campaign.merkle_root || null,
+        requiresMerkle,
+        inputs: fundingTx.inputs,
+        outputs: fundingTx.outputs,
+        fee: fundingTx.fee,
+      },
+      wcTransaction: serializeWcTransaction(fundingTx.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`GET /airdrops/${req.params.id}/funding-info error:`, error);
+    res.status(500).json({ error: 'Failed to get funding info', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/confirm-funding
+ * Confirm airdrop contract funding
+ */
+router.post('/airdrops/:id/confirm-funding', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const fundingAmountOnChain = displayAmountToOnChain(campaign.total_amount, campaign.token_type);
+    const isTokenAirdrop = isFungibleTokenType(campaign.token_type);
+
+    const expectedContractOutput = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: campaign.contract_address,
+        minimumSatoshis: BigInt(isTokenAirdrop ? 546 : Math.max(546, fundingAmountOnChain)),
+        ...(isTokenAirdrop && campaign.token_category
+          ? {
+              tokenCategory: campaign.token_category,
+              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(fundingAmountOnChain))),
+            }
+          : {}),
+        requireNft: true,
+        requiredNftCapability: 'mutable',
+        minimumNftCommitmentBytes: 32,
+      },
+      'chipnet',
+    );
+
+    if (!expectedContractOutput) {
+      return res.status(400).json({
+        error: 'Funding transaction does not include the expected contract output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+
+    // Update campaign with tx_hash and set status to ACTIVE
+    db!.prepare(`
+      UPDATE airdrops
+      SET tx_hash = ?, status = 'ACTIVE', updated_at = ?
+      WHERE id = ?
+    `).run(txHash, now, id);
+
+    res.json({
+      success: true,
+      message: 'Airdrop funding confirmed',
+      txHash,
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/confirm-funding error:`, error);
+    res.status(500).json({ error: 'Failed to confirm funding', message: error.message });
+  }
+});
+
+/**
+ * GET /api/airdrops/:id/proof/:address
+ * Get merkle proof for specific address
+ */
+router.get('/airdrops/:id/proof/:address', async (req: Request, res: Response) => {
+  try {
+    const { id, address } = req.params;
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    if (!campaign.merkle_data) {
+      if (campaign.require_kyc) {
+        return res.status(400).json({ error: 'Merkle tree not generated for this campaign' });
+      }
+      return res.json({
+        success: true,
+        proof: [],
+        amount: campaign.amount_per_claim,
+        merkleRoot: campaign.merkle_root || null,
+        publicCampaign: true,
+      });
+    }
+
+    const merkleData = JSON.parse(campaign.merkle_data);
+    const proofsMap = new Map(merkleData.proofs);
+    const proof = proofsMap.get(address);
+
+    if (!proof) {
+      return res.status(404).json({ error: 'Address not found in merkle tree' });
+    }
+
+    // Find recipient amount
+    const recipient = merkleData.recipients.find((r: any) => r.address === address);
+    if (!recipient) {
+      return res.status(404).json({ error: 'Recipient not found' });
+    }
+
+    res.json({
+      success: true,
+      proof,
+      amount: recipient.amount,
+      merkleRoot: campaign.merkle_root,
+    });
+  } catch (error: any) {
+    console.error(`GET /airdrops/${req.params.id}/proof/${req.params.address} error:`, error);
+    res.status(500).json({ error: 'Failed to get proof', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/claim
+ * Build claim transaction with merkle proof
+ */
+router.post('/airdrops/:id/claim', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const claimerAddress = String(req.body?.claimerAddress || req.body?.claimer || '').trim();
+
+    if (!claimerAddress) {
+      return res.status(400).json({ error: 'Claimer address is required' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    if (campaign.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Campaign is not active' });
+    }
+    if (!campaign.contract_address || !campaign.constructor_params) {
+      return res.status(400).json({
+        error: 'Campaign contract is not fully configured',
+        message: 'This campaign cannot be claimed until a valid contract deployment is recorded.',
+      });
+    }
+
+    const claimCountRow = db!
+      .prepare('SELECT COUNT(1) as cnt FROM airdrop_claims WHERE campaign_id = ? AND claimer = ?')
+      .get(id, claimerAddress) as any;
+    const claimCount = Number(claimCountRow?.cnt || 0);
+    const maxClaimsPerAddress = Math.max(1, Number(campaign.max_claims_per_address || 1));
+    if (claimCount >= maxClaimsPerAddress) {
+      return res.status(409).json({ error: 'Claim limit reached for this address' });
+    }
+
+    let claimAmountDisplay = Number(campaign.amount_per_claim);
+    if (campaign.merkle_data) {
+      const merkleData = JSON.parse(campaign.merkle_data);
+      const proofsMap = new Map(merkleData.proofs);
+      const proof = proofsMap.get(claimerAddress);
+      if (!proof) {
+        return res.status(403).json({ error: 'Address not eligible for this airdrop' });
+      }
+      const recipient = merkleData.recipients.find((r: any) => r.address === claimerAddress);
+      if (!recipient) {
+        return res.status(403).json({ error: 'Address not eligible for this airdrop' });
+      }
+      if (recipient.amount !== undefined && Number(recipient.amount) > 0) {
+        claimAmountDisplay = Number(recipient.amount);
+      }
+    } else if (campaign.require_kyc) {
+      return res.status(400).json({
+        error: 'KYC-restricted campaign requires merkle recipient data before claims can be built',
+      });
+    }
+
+    const constructorParams = JSON.parse(campaign.constructor_params || '[]');
+    const now = Math.floor(Date.now() / 1000);
+
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(campaign.contract_address)
+      || campaign.nft_commitment
+      || '00'.repeat(40);
+
+    const claimService = new AirdropClaimService('chipnet');
+    const claimAmountOnChain = displayAmountToOnChain(claimAmountDisplay, campaign.token_type);
+    const totalClaimedOnChain = displayAmountToOnChain(
+      campaign.claimed_count * campaign.amount_per_claim,
+      campaign.token_type,
+    );
+    const claimTx = await claimService.buildClaimTransaction({
+      airdropId: campaign.campaign_id,
+      contractAddress: campaign.contract_address,
+      claimer: claimerAddress,
+      claimAmount: claimAmountOnChain,
+      totalClaimed: totalClaimedOnChain,
+      tokenType: normalizeAirdropTokenType(campaign.token_type),
+      tokenCategory: campaign.token_category,
+      constructorParams: constructorParams.map((p: any) => {
+        if (p.type === 'bytes') return Buffer.from(p.value, 'hex');
+        if (p.type === 'bigint') return BigInt(p.value);
+        return p.value;
+      }),
+      currentCommitment,
+      currentTime: now,
+    });
+
+    const claimedDisplayAmount = onChainAmountToDisplay(claimTx.claimAmount, campaign.token_type);
+
+    res.json({
+      success: true,
+      claimAmount: claimedDisplayAmount,
+      wcTransaction: serializeWcTransaction(claimTx.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/claim error:`, error);
+    res.status(500).json({ error: 'Failed to build claim transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/confirm-claim
+ * Confirm airdrop claim
+ */
+router.post('/airdrops/:id/confirm-claim', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { claimerAddress, claimedAmount, txHash } = req.body;
+
+    if (!claimerAddress) {
+      return res.status(400).json({ error: 'Claimer address is required' });
+    }
+    if (!claimedAmount || !txHash) {
+      return res.status(400).json({ error: 'Claimed amount and transaction hash are required' });
+    }
+
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+
+    const claimedAmountNumber = Number(claimedAmount);
+    const claimedAmountOnChain = displayAmountToOnChain(claimedAmountNumber, campaign.token_type);
+    const isTokenAirdrop = isFungibleTokenType(campaign.token_type);
+
+    const expectedClaimOutput = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: claimerAddress,
+        minimumSatoshis: BigInt(isTokenAirdrop ? 546 : Math.max(546, claimedAmountOnChain)),
+        ...(isTokenAirdrop && campaign.token_category
+          ? {
+              tokenCategory: campaign.token_category,
+              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(claimedAmountOnChain))),
+            }
+          : {}),
+      },
+      'chipnet',
+    );
+
+    if (!expectedClaimOutput) {
+      return res.status(400).json({
+        error: 'Claim transaction does not include the expected claimer output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+
+    // Record claim
+    db!.prepare(`
+      INSERT INTO airdrop_claims (id, campaign_id, claimer, amount, claimed_at, tx_hash)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(randomUUID(), id, claimerAddress, claimedAmountNumber, now, txHash);
+
+    // Update campaign statistics
+    db!.prepare(`
+      UPDATE airdrops
+      SET claimed_count = claimed_count + 1, updated_at = ?
+      WHERE id = ?
+    `).run(now, id);
+
+    res.json({
+      success: true,
+      message: 'Claim confirmed',
+      txHash,
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/confirm-claim error:`, error);
+    res.status(500).json({ error: 'Failed to confirm claim', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/pause
+ * Build on-chain pause transaction for a campaign
+ */
+router.post('/airdrops/:id/pause', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (campaign.status !== 'ACTIVE') {
+      return res.status(400).json({ error: 'Only active campaigns can be paused' });
+    }
+    if (String(campaign.creator).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the campaign creator can pause this campaign' });
+    }
+    if (!campaign.contract_address || !campaign.constructor_params) {
+      return res.status(400).json({ error: 'Campaign contract is not fully configured' });
+    }
+
+    const controlService = new AirdropControlService('chipnet');
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(campaign.contract_address)
+      || campaign.nft_commitment
+      || '';
+    const constructorParams = deserializeConstructorParams(campaign.constructor_params);
+    const built = await controlService.buildPauseTransaction({
+      contractAddress: campaign.contract_address,
+      constructorParams,
+      currentCommitment,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenType: normalizeAirdropTokenType(campaign.token_type),
+    });
+
+    res.json({
+      success: true,
+      nextStatus: built.nextStatus,
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/pause error:`, error);
+    res.status(500).json({ error: 'Failed to build pause transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/confirm-pause
+ * Confirm on-chain pause transaction and update DB state
+ */
+router.post('/airdrops/:id/confirm-pause', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (String(campaign.creator).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the campaign creator can confirm pause' });
+    }
+
+    const hasExpectedState = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: campaign.contract_address,
+        minimumSatoshis: 546n,
+        requireNft: true,
+        requiredNftCapability: 'mutable',
+        minimumNftCommitmentBytes: 35,
+      },
+      'chipnet',
+    );
+    if (!hasExpectedState) {
+      return res.status(400).json({
+        error: 'Pause transaction does not include expected campaign covenant state output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    db!.prepare('UPDATE airdrops SET status = ?, updated_at = ? WHERE id = ?')
+      .run('PAUSED', now, id);
+
+    res.json({ success: true, txHash, status: 'PAUSED' });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/confirm-pause error:`, error);
+    res.status(500).json({ error: 'Failed to confirm pause', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/cancel
+ * Build on-chain cancel transaction for a campaign
+ */
+router.post('/airdrops/:id/cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (campaign.status === 'CANCELLED') {
+      return res.status(400).json({ error: 'Campaign is already cancelled' });
+    }
+    if (!['ACTIVE', 'PAUSED'].includes(String(campaign.status))) {
+      return res.status(400).json({ error: 'Only active or paused campaigns can be cancelled' });
+    }
+    if (String(campaign.creator).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the campaign creator can cancel this campaign' });
+    }
+    if (!campaign.contract_address || !campaign.constructor_params) {
+      return res.status(400).json({ error: 'Campaign contract is not fully configured' });
+    }
+
+    const controlService = new AirdropControlService('chipnet');
+    const contractService = new ContractService('chipnet');
+    const currentCommitment = await contractService.getNFTCommitment(campaign.contract_address)
+      || campaign.nft_commitment
+      || '';
+    const constructorParams = deserializeConstructorParams(campaign.constructor_params);
+    const authorityHash = readBytes20(constructorParams[1], 'authorityHash');
+    const authorityReturnAddress = hashToP2pkhAddress(authorityHash);
+    const built = await controlService.buildCancelTransaction({
+      contractAddress: campaign.contract_address,
+      constructorParams,
+      currentCommitment,
+      currentTime: Math.floor(Date.now() / 1000),
+      tokenType: normalizeAirdropTokenType(campaign.token_type),
+    });
+
+    const signerMatchesReturn = authorityReturnAddress.toLowerCase() === signerAddress.toLowerCase();
+    const warning = signerMatchesReturn
+      ? undefined
+      : 'Cancel refunds are enforced to authority hash in the contract constructor. ' +
+        'If this address is wrong, redeploy campaign with the correct creator authority address.';
+
+    res.json({
+      success: true,
+      nextStatus: built.nextStatus,
+      cancelReturnAddress: built.cancelReturnAddress,
+      authorityReturnAddress,
+      signerMatchesReturn,
+      remainingPool: built.remainingPool?.toString() || '0',
+      ...(warning ? { warning } : {}),
+      wcTransaction: serializeWcTransaction(built.wcTransaction),
+    });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/cancel error:`, error);
+    res.status(500).json({ error: 'Failed to build cancel transaction', message: error.message });
+  }
+});
+
+/**
+ * POST /api/airdrops/:id/confirm-cancel
+ * Confirm on-chain cancel transaction and update DB state
+ */
+router.post('/airdrops/:id/confirm-cancel', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { txHash } = req.body;
+    const signerAddress = (req.headers['x-user-address'] as string | undefined)?.trim()
+      || String(req.body?.signerAddress || '').trim();
+    if (!signerAddress) {
+      return res.status(400).json({ error: 'x-user-address header is required' });
+    }
+    if (!txHash) {
+      return res.status(400).json({ error: 'Transaction hash is required' });
+    }
+    if (!(await transactionExists(txHash, 'chipnet'))) {
+      return res.status(400).json({ error: 'Transaction hash not found on chipnet' });
+    }
+
+    const campaign = db!.prepare('SELECT * FROM airdrops WHERE id = ?').get(id) as any;
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
+    if (String(campaign.creator).toLowerCase() !== signerAddress.toLowerCase()) {
+      return res.status(403).json({ error: 'Only the campaign creator can confirm cancellation' });
+    }
+
+    const constructorParams = deserializeConstructorParams(campaign.constructor_params || '[]');
+    const authorityHash = readBytes20(constructorParams[1], 'authorityHash');
+    const authorityReturnAddress = hashToP2pkhAddress(authorityHash);
+    const isTokenAirdrop = isFungibleTokenType(campaign.token_type);
+    const hasExpectedRefund = await transactionHasExpectedOutput(
+      txHash,
+      {
+        address: authorityReturnAddress,
+        minimumSatoshis: 546n,
+        ...(isTokenAirdrop && campaign.token_category
+          ? {
+              tokenCategory: campaign.token_category,
+              minimumTokenAmount: 1n,
+            }
+          : {}),
+      },
+      'chipnet',
+    );
+    if (!hasExpectedRefund) {
+      return res.status(400).json({
+        error: 'Cancel transaction does not include expected authority refund output',
+      });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    db!.prepare('UPDATE airdrops SET status = ?, updated_at = ? WHERE id = ?')
+      .run('CANCELLED', now, id);
+
+    res.json({ success: true, txHash, status: 'CANCELLED' });
+  } catch (error: any) {
+    console.error(`POST /airdrops/${req.params.id}/confirm-cancel error:`, error);
+    res.status(500).json({ error: 'Failed to confirm cancel', message: error.message });
+  }
+});
+
+export default router;
+
+function normalizeAirdropTokenType(tokenType: unknown): 'BCH' | 'FUNGIBLE_TOKEN' {
+  return tokenType === 'FUNGIBLE_TOKEN' || tokenType === 'CASHTOKENS'
+    ? 'FUNGIBLE_TOKEN'
+    : 'BCH';
+}
+
+function deserializeConstructorParams(raw: string): any[] {
+  const parsed = JSON.parse(raw || '[]');
+  return parsed.map((param: any) => {
+    if (param && typeof param === 'object') {
+      if (param.type === 'bytes') return hexToBin(param.value);
+      if (param.type === 'bigint') return BigInt(param.value);
+      if (param.type === 'boolean') return param.value === true || param.value === 'true';
+      return param.value;
+    }
+    return param;
+  });
+}
+
+function readBytes20(value: unknown, name: string): Uint8Array {
+  if (!(value instanceof Uint8Array) || value.length !== 20) {
+    throw new Error(`Invalid ${name} in constructor parameters`);
+  }
+  return value;
+}
+
+function hashToP2pkhAddress(hash20: Uint8Array): string {
+  const lockingBytecode = new Uint8Array(25);
+  lockingBytecode[0] = 0x76;
+  lockingBytecode[1] = 0xa9;
+  lockingBytecode[2] = 0x14;
+  lockingBytecode.set(hash20, 3);
+  lockingBytecode[23] = 0x88;
+  lockingBytecode[24] = 0xac;
+  const encoded = lockingBytecodeToCashAddress({
+    bytecode: lockingBytecode,
+    prefix: 'bchtest',
+  });
+  if (typeof encoded === 'string') {
+    throw new Error(`Failed to encode authority P2PKH address: ${encoded}`);
+  }
+  return encoded.address;
+}

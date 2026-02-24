@@ -5,8 +5,19 @@
 
 import { Router } from 'express';
 import { ContractService } from '../services/contract-service.js';
+import { DeploymentRegistryService } from '../services/DeploymentRegistryService.js';
 
 const router = Router();
+
+const SUPPORTED_NETWORKS = new Set(['mainnet', 'testnet3', 'testnet4', 'chipnet']);
+
+function getNetwork(raw: unknown): 'mainnet' | 'testnet3' | 'testnet4' | 'chipnet' {
+  const candidate = String(raw || 'chipnet');
+  if (SUPPORTED_NETWORKS.has(candidate)) {
+    return candidate as 'mainnet' | 'testnet3' | 'testnet4' | 'chipnet';
+  }
+  return 'chipnet';
+}
 
 /**
  * POST /api/deployment/deploy
@@ -28,18 +39,15 @@ router.post('/deploy', async (req, res) => {
     }
 
     const contractService = new ContractService('chipnet');
-    const vaultStartTime = Math.floor(Date.now() / 1000);
 
-    const deployment = await contractService.deployVault(
-      signer1,
-      signer2,
-      signer3,
-      approvalThreshold,
-      0, // Initial state
-      cycleDuration,
-      vaultStartTime,
-      spendingCap
-    );
+    const deployment = await contractService.deployVault({
+      signerPubkeys: [signer1, signer2, signer3],
+      requiredApprovals: approvalThreshold,
+      periodDuration: cycleDuration,
+      periodCap: spendingCap,
+      recipientCap: 0,
+      allowlistEnabled: false,
+    });
 
     // Check balance
     const balance = await contractService.getBalance(deployment.contractAddress);
@@ -115,5 +123,38 @@ router.get('/verify/:address', async (req, res) => {
   }
 });
 
-export default router;
+/**
+ * GET /api/deployment/registry
+ * Return all known contract deployments + verification status.
+ */
+router.get('/registry', async (req, res) => {
+  try {
+    const network = getNetwork(req.query.network);
+    const verifyOnChain = String(req.query.verifyOnChain ?? 'true').toLowerCase() !== 'false';
 
+    const registryService = new DeploymentRegistryService(network);
+    const report = await registryService.buildReport({ verifyOnChain });
+    const problematic = report.entries.filter((entry) =>
+      !entry.contractAddress ||
+      entry.addressMatchesCurrentArtifact === false ||
+      entry.hasOnChainEvidence === false ||
+      entry.constructorParamsPresent === false,
+    );
+
+    res.json({
+      success: true,
+      ...report,
+      problematicCount: problematic.length,
+      problematic,
+    });
+  } catch (error: any) {
+    console.error('Deployment registry error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to build deployment registry',
+      message: error.message,
+    });
+  }
+});
+
+export default router;
