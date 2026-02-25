@@ -44,7 +44,7 @@ function toToken(
   const tokenAmount = toNonNegativeBigInt(amount, 'token amount');
 
   return {
-    category: hexToBin(category),
+    category: hexToBin(category).slice().reverse(),
     amount: tokenAmount,
     ...(nftCapability !== undefined && nftCommitment !== undefined
       ? {
