@@ -44,6 +44,73 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
   private currentAddress: string | null = null;
   private eventListeners: Map<string, Function[]> = new Map();
 
+  private _isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private _sessionSupportsMethod(method: string): boolean {
+    if (!this.session || !this._isRecord(this.session.namespaces)) {
+      return false;
+    }
+
+    const namespaces = Object.values(this.session.namespaces) as Array<{
+      methods?: unknown;
+    }>;
+    return namespaces.some((namespace) => {
+      return Array.isArray(namespace.methods) && namespace.methods.includes(method);
+    });
+  }
+
+  private _extractErrorMessage(error: unknown, fallback: string): string {
+    const seen = new Set<string>();
+    const messages: string[] = [];
+
+    const pushMessage = (value: unknown) => {
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (!trimmed || trimmed === '[object Object]' || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      messages.push(trimmed);
+    };
+
+    if (this._isRecord(error)) {
+      pushMessage(error.message);
+      pushMessage(error.reason);
+
+      if (this._isRecord(error.data)) {
+        pushMessage(error.data.message);
+      }
+
+      if (this._isRecord(error.error)) {
+        pushMessage(error.error.message);
+      }
+
+      if (this._isRecord(error.cause)) {
+        pushMessage(error.cause.message);
+      }
+
+      if (this._isRecord(error.response)) {
+        pushMessage(error.response.message);
+      }
+    } else if (typeof error === 'string') {
+      pushMessage(error);
+    }
+
+    if (messages.length > 0) {
+      return messages.join(' | ');
+    }
+
+    if (this._isRecord(error)) {
+      return fallback;
+    }
+
+    if (error instanceof Error && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    return fallback;
+  }
+
   private async _withRequestTimeout<T>(promise: Promise<T>, context: string): Promise<T> {
     const timeoutMs = Number(import.meta.env.VITE_WALLETCONNECT_REQUEST_TIMEOUT_MS || 90000);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -94,8 +161,12 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
     }
   }
 
-  private async _syncAddressFromWallet(): Promise<string | null> {
+  private async _syncAddressFromWallet(options?: { logErrors?: boolean }): Promise<string | null> {
     if (!this.client || !this.session) {
+      return this.currentAddress;
+    }
+
+    if (!this._sessionSupportsMethod('bch_getAddresses')) {
       return this.currentAddress;
     }
 
@@ -118,7 +189,9 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
         this._emitAddressChanged(nextAddress);
       }
     } catch (error) {
-      console.warn('[Web3ModalWC] Failed to refresh address from wallet:', error);
+      if (options?.logErrors) {
+        console.warn('[Web3ModalWC] Failed to refresh address from wallet:', error);
+      }
     }
 
     return this.currentAddress;
@@ -184,13 +257,14 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
       return await this._getSessionInfo();
     } catch (error: any) {
       console.error('[Web3ModalWC] Connection failed:', error);
+      const message = this._extractErrorMessage(error, 'Unknown connection error');
 
       // Handle specific errors
-      if (error.message?.includes('Project ID')) {
+      if (message.includes('Project ID')) {
         throw error; // Re-throw project ID errors as-is
       }
 
-      if (error.message?.includes('timeout')) {
+      if (message.includes('timeout')) {
         throw new Error(
           'Connection timeout.\n\n' +
           'Possible issues:\n' +
@@ -200,7 +274,7 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
         );
       }
 
-      if (error.message?.includes('WebSocket') || error.toString().includes('WebSocket')) {
+      if (message.includes('WebSocket')) {
         throw new Error(
           'Cannot connect to WalletConnect relay.\n\n' +
           'This might be due to:\n' +
@@ -210,7 +284,7 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
         );
       }
 
-      throw new Error(`WalletConnect connection failed: ${error.message}`);
+      throw new Error(`WalletConnect connection failed: ${message}`);
     }
   }
 
@@ -348,7 +422,9 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
     const accountAddress = accountParts.slice(2).join(':');
 
     this.currentAddress = this._normalizeCashAddress(accountAddress || accountString);
-    await this._syncAddressFromWallet();
+    if (!this.currentAddress) {
+      await this._syncAddressFromWallet({ logErrors: false });
+    }
 
     // Determine network
     const network = chain === 'bchtest' ? 'chipnet' : 'mainnet';
@@ -417,7 +493,9 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
    * Get connected address
    */
   async getAddress(): Promise<string> {
-    await this._syncAddressFromWallet();
+    if (!this.currentAddress) {
+      await this._syncAddressFromWallet({ logErrors: false });
+    }
     if (!this.currentAddress) {
       throw new Error('Wallet not connected');
     }
@@ -507,7 +585,6 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
 
     try {
       const connectedChain = this._getPrimaryChain();
-      await this._syncAddressFromWallet();
 
       console.log('[Web3ModalWC] Signing transaction...', {
         chain: connectedChain,
@@ -553,10 +630,15 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
     } catch (error: any) {
       console.error('[Web3ModalWC] Signing failed:', error);
 
-      if (error.message?.includes('rejected') || error.message?.includes('cancelled')) {
+      const reason = this._extractErrorMessage(
+        error,
+        'WalletConnect returned an empty error response'
+      );
+
+      if (/(rejected|cancelled|declined|denied|disapproved)/i.test(reason)) {
         throw new Error('Transaction rejected by user');
       }
-      if (error.message?.includes('timed out')) {
+      if (/(timed out|timeout)/i.test(reason)) {
         try {
           await this.disconnect();
         } catch {
@@ -567,7 +649,13 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
         );
       }
 
-      throw new Error(`Transaction signing failed: ${error.message}`);
+      if (/empty error response/i.test(reason)) {
+        throw new Error(
+          'Transaction signing failed: wallet returned no error details. Reconnect WalletConnect and try again.'
+        );
+      }
+
+      throw new Error(`Transaction signing failed: ${reason}`);
     }
   }
 
@@ -599,12 +687,13 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
       return signature as string;
     } catch (error: any) {
       console.error('[Web3ModalWC] Message signing failed:', error);
+      const message = this._extractErrorMessage(error, 'Unknown wallet error');
 
-      if (error.message?.includes('rejected') || error.message?.includes('cancelled')) {
+      if (/(rejected|cancelled|declined|denied|disapproved)/i.test(message)) {
         throw new Error('Message signing rejected by user');
       }
 
-      throw new Error(`Message signing failed: ${error.message}`);
+      throw new Error(`Message signing failed: ${message}`);
     }
   }
 
