@@ -123,7 +123,7 @@ export function buildFundingWcTransaction(params: {
       locktime: 0,
     } as any,
     sourceOutputs: sourceOutputs as any,
-    broadcast: params.broadcast ?? true,
+    broadcast: params.broadcast ?? false,
     userPrompt: params.userPrompt,
   };
 }

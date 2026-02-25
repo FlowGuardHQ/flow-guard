@@ -195,7 +195,7 @@ export async function signAndBroadcast(
   try {
     // Try to sign the transaction first
     let signedTxHex = txHex;
-    
+
     // Use signRawTransaction if available
     if (wallet.signRawTransaction && typeof wallet.signRawTransaction === 'function') {
       try {
@@ -207,7 +207,7 @@ export async function signAndBroadcast(
         // Fall through to alternative method
       }
     }
-    
+
     // Alternative: Try signTransaction with hex in data field
     if (signedTxHex === txHex) {
       try {
@@ -861,8 +861,14 @@ export async function fundPaymentContract(
       );
     }
 
-    const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
+    const signOptions = deserializeWcSignOptions(wcTransaction);
+    signOptions.broadcast = false;
+    const signResult = await wallet.signCashScriptTransaction(signOptions);
     const txId = signResult.signedTransactionHash;
+
+    console.log('[FlowGuard] Payment signed successfully, broadcasting...', txId);
+    const broadcastResult = await broadcastTransaction(signResult.signedTransaction);
+    console.log('[FlowGuard] Broadcast result:', broadcastResult);
 
     // Confirm funding with backend
     const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-funding`, {
