@@ -431,6 +431,8 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
         })
       );
 
+      console.log('[Web3ModalWC] DEBUG: Full serialized params:', JSON.stringify(serializedParams, null, 2));
+
       const result = await this._requestWithoutRedirect(() =>
         this.client!.request({
           topic: this.session!.topic,
