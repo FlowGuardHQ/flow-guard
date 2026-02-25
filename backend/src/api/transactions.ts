@@ -8,10 +8,41 @@ import { TransactionService } from '../services/transactionService.js';
 import { Contract, ElectrumNetworkProvider, TransactionBuilder, type Output } from 'cashscript';
 import { ContractFactory } from '../services/ContractFactory.js';
 import { ContractService } from '../services/contract-service.js';
-import { hexToBin } from '@bitauth/libauth';
+import { binToHex, decodeTransaction, hexToBin } from '@bitauth/libauth';
 import db from '../database/schema.js';
 
 const router = Router();
+
+function diagnoseSignedTransaction(txHex: string): {
+  inputCount: number;
+  outputCount: number;
+  locktime: number;
+  sequences: number[];
+  firstInputUnlockingBytes: number;
+  firstInputHasPlaceholderPubkey: boolean;
+} | null {
+  try {
+    const decoded = decodeTransaction(hexToBin(txHex));
+    if (typeof decoded === 'string') {
+      return null;
+    }
+
+    const firstUnlocking = decoded.inputs[0]?.unlockingBytecode;
+    const firstUnlockingHex = firstUnlocking ? binToHex(firstUnlocking) : '';
+    const placeholderPubkeyPattern = `21${'00'.repeat(33)}`;
+
+    return {
+      inputCount: decoded.inputs.length,
+      outputCount: decoded.outputs.length,
+      locktime: decoded.locktime,
+      sequences: decoded.inputs.map((input) => input.sequenceNumber),
+      firstInputUnlockingBytes: firstUnlocking?.length ?? 0,
+      firstInputHasPlaceholderPubkey: firstUnlockingHex.includes(placeholderPubkeyPattern),
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * GET /api/vaults/:id/transactions
@@ -88,7 +119,13 @@ router.post('/transactions/broadcast', async (req, res) => {
     res.json({ txid, success: true });
   } catch (error: any) {
     console.error('POST /transactions/broadcast error:', error);
-    res.status(500).json({ error: error.message || 'Failed to broadcast transaction' });
+    const diagnostics = typeof req.body?.txHex === 'string'
+      ? diagnoseSignedTransaction(req.body.txHex)
+      : null;
+    res.status(500).json({
+      error: error.message || 'Failed to broadcast transaction',
+      diagnostics,
+    });
   }
 });
 
