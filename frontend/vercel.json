@@ -2,6 +2,10 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://api.flowguard.cash/api/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
