@@ -156,15 +156,17 @@ export function deserializeWcSignOptions(serialized: SerializedWcTransaction): C
     const txInput = decoded.inputs[i];
     if (!txInput) continue;
 
-    // Preserve explicit unlocking bytecode from sourceOutputs when provided.
-    if (sourceOutput.unlockingBytecode !== undefined) {
-      txInput.unlockingBytecode = sourceOutput.unlockingBytecode;
+    // For wallet-owned inputs, force empty unlocking bytecode so wallets actually sign.
+    // Some builders include placeholder unlocking scripts in sourceOutputs; if those are
+    // preserved on non-contract inputs, wallets may skip signing and the tx fails OP_EQUALVERIFY.
+    if (!sourceOutput.contract) {
+      txInput.unlockingBytecode = new Uint8Array(0);
       continue;
     }
 
-    // For wallet-owned P2PKH/P2SH inputs, keep empty unlocking bytecode to trigger wallet signing.
-    if (!sourceOutput.contract) {
-      txInput.unlockingBytecode = new Uint8Array(0);
+    // Preserve explicit unlocking bytecode for contract inputs only.
+    if (sourceOutput.unlockingBytecode !== undefined) {
+      txInput.unlockingBytecode = sourceOutput.unlockingBytecode;
     }
   }
 

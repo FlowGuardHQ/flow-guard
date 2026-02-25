@@ -47,12 +47,14 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-// Apply strict rate limiting to creation endpoints
-app.use('/api/vaults', strictLimiter);
-app.use('/api/streams', strictLimiter);
-app.use('/api/payments', strictLimiter);
-app.use('/api/airdrops', strictLimiter);
-app.use('/api/budget-plans', strictLimiter);
+// Apply strict rate limiting only to expensive creation/build endpoints
+app.post('/api/vaults', strictLimiter);
+app.post('/api/streams/create', strictLimiter);
+app.post('/api/treasuries/:vaultId/batch-create', strictLimiter);
+app.post('/api/payments/create', strictLimiter);
+app.post('/api/airdrops/create', strictLimiter);
+app.post('/api/airdrops/:id/generate-merkle', strictLimiter);
+app.post('/api/vaults/:vaultId/budget-plans', strictLimiter);
 // Apply query rate limiting to read-only endpoints
 app.use('/api/explorer', queryLimiter);
 
@@ -111,4 +113,3 @@ process.on('SIGINT', () => {
   stopTransactionMonitor();
   process.exit(0);
 });
-
