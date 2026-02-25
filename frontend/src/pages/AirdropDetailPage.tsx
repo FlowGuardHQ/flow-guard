@@ -11,6 +11,7 @@ import {
   cancelAirdropOnChain,
   getExplorerTxUrl,
 } from '../utils/blockchain';
+import { formatLogicalId } from '../utils/display';
 import {
   ChevronLeft,
   Gift,
@@ -247,7 +248,7 @@ export default function AirdropDetailPage() {
               {campaign.description && (
                 <p className="text-textMuted font-mono mb-2">{campaign.description}</p>
               )}
-              <p className="text-sm text-textMuted font-mono">{campaign.campaign_id}</p>
+              <p className="text-sm text-textMuted font-mono">{formatLogicalId(campaign.campaign_id)}</p>
             </div>
 
             <div className="flex gap-3">

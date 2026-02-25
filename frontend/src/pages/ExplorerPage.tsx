@@ -28,6 +28,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { CircularProgress } from '../components/streams/CircularProgress';
 import { getExplorerTxUrl, getExplorerAddressUrl } from '../utils/blockchain';
+import { formatLogicalId } from '../utils/display';
 
 interface ExplorerStats {
   network: {
@@ -494,7 +495,7 @@ export default function ExplorerPage() {
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-sans font-medium text-textPrimary">{stream.stream_id}</p>
+                            <p className="font-sans font-medium text-textPrimary">{formatLogicalId(stream.stream_id)}</p>
                             <p className="text-sm text-textMuted font-mono">
                               {formatAddress(stream.sender)} → {formatAddress(stream.recipient)}
                             </p>

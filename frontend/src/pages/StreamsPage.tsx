@@ -10,6 +10,7 @@ import { useWallet } from '../hooks/useWallet';
 import { Button } from '../components/ui/Button';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { StatsCard } from '../components/shared/StatsCard';
+import { formatLogicalId } from '../utils/display';
 
 type RoleView = 'recipient' | 'sender' | 'all';
 
@@ -96,7 +97,7 @@ export default function StreamsPage() {
       sortable: true,
       render: (row) => (
         <div>
-          <p className="font-sans font-medium text-textPrimary">{row.stream_id}</p>
+          <p className="font-sans font-medium text-textPrimary">{formatLogicalId(row.stream_id)}</p>
           <p className="text-xs text-textMuted font-mono">{row.stream_type}</p>
         </div>
       ),

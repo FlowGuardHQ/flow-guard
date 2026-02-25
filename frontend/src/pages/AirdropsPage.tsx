@@ -10,6 +10,7 @@ import { useWallet } from '../hooks/useWallet';
 import { Button } from '../components/ui/Button';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { StatsCard } from '../components/shared/StatsCard';
+import { formatLogicalId } from '../utils/display';
 
 type CampaignStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'EXPIRED';
 type CampaignType = 'AIRDROP' | 'BOUNTY' | 'REWARD' | 'GRANT';
@@ -99,7 +100,7 @@ export default function AirdropsPage() {
       render: (row) => (
         <div>
           <p className="font-sans font-medium text-textPrimary">{row.title}</p>
-          <p className="text-xs text-textMuted font-mono">{row.campaign_id}</p>
+          <p className="text-xs text-textMuted font-mono">{formatLogicalId(row.campaign_id)}</p>
         </div>
       ),
     },

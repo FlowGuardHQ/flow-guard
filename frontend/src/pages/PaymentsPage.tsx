@@ -10,6 +10,7 @@ import { useWallet } from '../hooks/useWallet';
 import { Button } from '../components/ui/Button';
 import { DataTable, Column } from '../components/shared/DataTable';
 import { StatsCard } from '../components/shared/StatsCard';
+import { formatLogicalId } from '../utils/display';
 
 type PaymentStatus = 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'COMPLETED';
 type PaymentInterval = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'YEARLY';
@@ -105,9 +106,9 @@ export default function PaymentsPage() {
       render: (row) => (
         <div>
           <p className="font-sans font-medium text-textPrimary">
-            {row.recipient_name || row.payment_id}
+            {row.recipient_name || formatLogicalId(row.payment_id)}
           </p>
-          <p className="text-xs text-textMuted font-mono">{row.payment_id}</p>
+          <p className="text-xs text-textMuted font-mono">{formatLogicalId(row.payment_id)}</p>
         </div>
       ),
     },

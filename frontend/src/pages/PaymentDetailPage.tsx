@@ -12,6 +12,7 @@ import {
   cancelPaymentOnChain,
   getExplorerTxUrl,
 } from '../utils/blockchain';
+import { formatLogicalId } from '../utils/display';
 import {
   ChevronLeft,
   Repeat,
@@ -237,7 +238,7 @@ export default function PaymentDetailPage() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-2xl md:text-3xl lg:text-4xl xl:text-5xl font-display font-bold text-textPrimary mb-2">
-                {payment.payment_id}
+                {formatLogicalId(payment.payment_id)}
               </h1>
               <p className="text-textMuted font-mono">
                 Recurring {payment.interval.toLowerCase()} payment
