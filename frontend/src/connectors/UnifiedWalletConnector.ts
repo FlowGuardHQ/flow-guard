@@ -175,21 +175,21 @@ export class WalletConnect2Connector implements IWalletConnector {
     // Use the network configured in env
     const connectedChain = this.useChipnet ? 'bch:bchtest' : 'bch:bitcoincash';
 
-    // Define optional namespaces for BCH (requiredNamespaces is deprecated)
-    const optionalNamespaces = {
+    // Required namespaces per WC2 BCH-BCR spec
+    const requiredNamespaces = {
       bch: {
         chains: [connectedChain],
         methods: ['bch_getAddresses', 'bch_signTransaction', 'bch_signMessage'],
-        events: ['addressesChanged'],
+        events: ['addressesChanged', 'disconnect'],
       },
     };
 
-    console.log('WC: Requesting connection with namespaces:', optionalNamespaces);
+    console.log('WC: Requesting connection with namespaces:', requiredNamespaces);
     console.log('WC: Network from env:', this.useChipnet ? 'chipnet' : 'mainnet');
 
     // Request connection
     const { uri, approval } = await this.client.connect({
-      optionalNamespaces,
+      requiredNamespaces,
     });
 
     // Show QR modal
