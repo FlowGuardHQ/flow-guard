@@ -491,9 +491,9 @@ router.post('/payments/:id/confirm-cancel', async (req: Request, res: Response) 
           minimumSatoshis: BigInt(isTokenPayment ? 546 : Number(remainingPool)),
           ...(isTokenPayment && payment.token_category
             ? {
-                tokenCategory: payment.token_category,
-                minimumTokenAmount: remainingPool,
-              }
+              tokenCategory: payment.token_category,
+              minimumTokenAmount: remainingPool,
+            }
             : {}),
         },
         'chipnet',
@@ -533,7 +533,15 @@ router.get('/payments/:id/funding-info', async (req: Request, res: Response) => 
       return res.status(400).json({ error: 'Payment contract not deployed' });
     }
 
-    const fundedPeriods = 12;
+    const now = Math.floor(Date.now() / 1000);
+    const startTime = Number(payment.start_date || now);
+    const endTime = Number(payment.end_date || 0);
+    const intervalSec = Number(payment.interval_seconds || 86400);
+    let fundedPeriods = 12;
+    if (endTime > 0 && intervalSec > 0) {
+      const remainingSeconds = Math.max(0, endTime - Math.max(startTime, now));
+      fundedPeriods = Math.min(12, Math.max(1, Math.ceil(remainingSeconds / intervalSec)));
+    }
     const fundingAmountDisplay = Number(payment.amount_per_period) * fundedPeriods;
     const fundingAmountOnChain = displayAmountToOnChain(fundingAmountDisplay, payment.token_type);
 
@@ -590,7 +598,15 @@ router.post('/payments/:id/confirm-funding', async (req: Request, res: Response)
       return res.status(404).json({ error: 'Payment not found' });
     }
 
-    const fundedPeriods = 12;
+    const cfNow = Math.floor(Date.now() / 1000);
+    const cfStart = Number(payment.start_date || cfNow);
+    const cfEnd = Number(payment.end_date || 0);
+    const cfInterval = Number(payment.interval_seconds || 86400);
+    let fundedPeriods = 12;
+    if (cfEnd > 0 && cfInterval > 0) {
+      const remaining = Math.max(0, cfEnd - Math.max(cfStart, cfNow));
+      fundedPeriods = Math.min(12, Math.max(1, Math.ceil(remaining / cfInterval)));
+    }
     const fundingAmountOnChain = displayAmountToOnChain(
       Number(payment.amount_per_period) * fundedPeriods,
       payment.token_type,
@@ -604,9 +620,9 @@ router.post('/payments/:id/confirm-funding', async (req: Request, res: Response)
         minimumSatoshis: BigInt(isTokenPayment ? 546 : Math.max(546, fundingAmountOnChain)),
         ...(isTokenPayment && payment.token_category
           ? {
-              tokenCategory: payment.token_category,
-              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(fundingAmountOnChain))),
-            }
+            tokenCategory: payment.token_category,
+            minimumTokenAmount: BigInt(Math.max(0, Math.trunc(fundingAmountOnChain))),
+          }
           : {}),
         requireNft: true,
         requiredNftCapability: 'mutable',
@@ -749,9 +765,9 @@ router.post('/payments/:id/confirm-claim', async (req: Request, res: Response) =
         minimumSatoshis: BigInt(isTokenPayment ? 546 : Math.max(546, claimedAmountOnChain)),
         ...(isTokenPayment && payment.token_category
           ? {
-              tokenCategory: payment.token_category,
-              minimumTokenAmount: BigInt(Math.max(0, Math.trunc(claimedAmountOnChain))),
-            }
+            tokenCategory: payment.token_category,
+            minimumTokenAmount: BigInt(Math.max(0, Math.trunc(claimedAmountOnChain))),
+          }
           : {}),
       },
       'chipnet',
