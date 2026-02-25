@@ -236,8 +236,10 @@ export class PaymentFundingService {
       );
     }
 
-    // Build final outputs (remove placeholder, add real change if enough)
-    const outputs: TransactionOutput[] = preliminaryOutputs.slice(0, -1);
+    // Build final outputs: put BCH change FIRST at index 0 so the user retains
+    // a vout=0 UTXO for future CashTokens genesis transactions.
+    const contractAndTokenOutputs: TransactionOutput[] = preliminaryOutputs.slice(0, -1);
+    const outputs: TransactionOutput[] = [];
 
     if (bchBudgetAfterTokenChange > 546n) {
       outputs.push({
@@ -245,6 +247,8 @@ export class PaymentFundingService {
         amount: bchBudgetAfterTokenChange.toString(),
       });
     }
+
+    outputs.push(...contractAndTokenOutputs);
 
     const wcTransaction = buildFundingWcTransaction({
       inputOwnerAddress: senderAddress,

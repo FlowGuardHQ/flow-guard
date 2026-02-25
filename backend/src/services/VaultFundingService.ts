@@ -78,6 +78,9 @@ export class VaultFundingService {
     const tokenCategory = categoryAnchor.txid;
 
     const outputs = [
+      ...(changeSats > 546n
+        ? [{ to: params.funderAddress, amount: changeSats }]
+        : []),
       {
         to: contract.tokenAddress,
         amount: params.depositSatoshis,
@@ -90,9 +93,6 @@ export class VaultFundingService {
           },
         },
       },
-      ...(changeSats > 546n
-        ? [{ to: params.funderAddress, amount: changeSats }]
-        : []),
     ];
 
     const wcTransaction = buildFundingWcTransaction({
@@ -104,7 +104,6 @@ export class VaultFundingService {
       })),
       outputs,
       userPrompt: 'Fund vault and initialize state NFT',
-      broadcast: true,
     });
 
     console.log('[VaultFundingService] Built initial vault funding transaction', {

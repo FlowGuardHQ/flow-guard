@@ -207,10 +207,51 @@ export class BudgetFundingService {
       tokenType === 'FUNGIBLE_TOKEN' && totalTokenInputAmount > totalAmountOnChain
         ? totalTokenInputAmount - totalAmountOnChain
         : 0n;
-    const estimatedOutputCount = tokenChangeAmount > 0n ? 3 : 2;
-    const estimatedFee = this.estimateFee(selectedUtxos.length, estimatedOutputCount);
     const tokenContractSatoshis = getTokenFundingSatoshis('budget');
     const contractOutput = tokenType === 'FUNGIBLE_TOKEN' ? tokenContractSatoshis : totalAmountOnChain;
+
+    if (!stateTokenCategory) {
+      throw new Error('Missing state token category for budget funding output');
+    }
+
+    const preliminaryOutputs: TransactionOutput[] = [
+      {
+        to: contractAddress,
+        amount: contractOutput.toString(),
+        token: tokenType === 'FUNGIBLE_TOKEN'
+          ? {
+            category: tokenCategory!,
+            amount: totalAmountOnChain.toString(),
+            nft: {
+              commitment: nftCommitment,
+              capability: nftCapability,
+            },
+          }
+          : {
+            category: stateTokenCategory,
+            amount: 0,
+            nft: {
+              commitment: nftCommitment,
+              capability: nftCapability,
+            },
+          },
+      },
+    ];
+
+    if (tokenChangeAmount > 0n) {
+      preliminaryOutputs.push({
+        to: senderAddress,
+        amount: dustAmount.toString(),
+        token: {
+          category: tokenCategory!,
+          amount: tokenChangeAmount.toString(),
+        },
+      });
+    }
+
+    preliminaryOutputs.push({ to: senderAddress, amount: '0' });
+
+    const estimatedFee = this.estimateFee(selectedUtxos.length, preliminaryOutputs.length, preliminaryOutputs);
     const bchBudgetAfterContractAndFee = totalInputValue - contractOutput - estimatedFee;
     const bchBudgetAfterTokenChange =
       tokenChangeAmount > 0n ? bchBudgetAfterContractAndFee - dustAmount : bchBudgetAfterContractAndFee;
@@ -221,54 +262,17 @@ export class BudgetFundingService {
       );
     }
 
-    if (!stateTokenCategory) {
-      throw new Error('Missing state token category for budget funding output');
-    }
+    const contractAndTokenOutputs: TransactionOutput[] = preliminaryOutputs.slice(0, -1);
+    const outputs: TransactionOutput[] = [];
 
-    // Build outputs
-    const outputs: TransactionOutput[] = [
-      {
-        to: contractAddress,
-        amount: contractOutput.toString(),
-        token: tokenType === 'FUNGIBLE_TOKEN'
-          ? {
-              category: tokenCategory!,
-              amount: totalAmountOnChain.toString(), // Token amount
-              nft: {
-                commitment: nftCommitment,
-                capability: nftCapability,
-              },
-            }
-          : {
-              // BCH-only budget with NFT commitment for state tracking
-              category: stateTokenCategory,
-              amount: 0,
-              nft: {
-                commitment: nftCommitment,
-                capability: nftCapability,
-              },
-            },
-      },
-    ];
-
-    if (tokenChangeAmount > 0n) {
-      outputs.push({
-        to: senderAddress,
-        amount: dustAmount.toString(),
-        token: {
-          category: tokenCategory!,
-          amount: tokenChangeAmount.toString(),
-        },
-      });
-    }
-
-    // Add BCH-only change output if significant
     if (bchBudgetAfterTokenChange > 546n) {
       outputs.push({
         to: senderAddress,
         amount: bchBudgetAfterTokenChange.toString(),
       });
     }
+
+    outputs.push(...contractAndTokenOutputs);
 
     // Return structured transaction parameters
     // Frontend must build and sign the actual raw transaction using these params
@@ -277,7 +281,6 @@ export class BudgetFundingService {
       inputs: sourceOutputs,
       outputs,
       userPrompt: `Fund budget contract ${contractAddress}`,
-      broadcast: true,
     });
 
     return {
@@ -295,10 +298,28 @@ export class BudgetFundingService {
   /**
    * Estimate fee for funding transaction
    */
-  estimateFee(numInputs: number, numOutputs: number): bigint {
-    // Rough estimate: 148 bytes per input + 34 bytes per output + 10 bytes overhead
-    const estimatedSize = numInputs * 148 + numOutputs * 34 + 10;
-    const feeRate = 1n; // 1 sat/byte for chipnet
+  estimateFee(numInputs: number, numOutputs: number, outputs?: TransactionOutput[]): bigint {
+    let outputBytes = 0;
+    if (outputs) {
+      for (const output of outputs) {
+        let outSize = 8;
+        if (output.token) {
+          outSize += 34;
+          if (output.token.nft?.commitment) {
+            outSize += 1 + output.token.nft.commitment.length / 2;
+          }
+          if (output.token.amount && BigInt(output.token.amount) > 0n) {
+            outSize += 9;
+          }
+        }
+        outSize += 36;
+        outputBytes += outSize;
+      }
+    } else {
+      outputBytes = numOutputs * 36;
+    }
+    const estimatedSize = numInputs * 148 + outputBytes + 10;
+    const feeRate = 2n;
     return BigInt(estimatedSize) * feeRate;
   }
 }
