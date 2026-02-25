@@ -187,12 +187,28 @@ export class CashonizeConnector implements IWalletConnector {
   }
 
   /**
-   * Get wallet balance
+   * Get wallet balance via backend API
    */
   async getBalance(): Promise<WalletBalance> {
-    // Balance not available via WC2
-    // Could be fetched from blockchain using address
-    return { bch: 0, sat: 0 };
+    if (!this.currentAddress) {
+      return { bch: 0, sat: 0 };
+    }
+
+    try {
+      const response = await fetch(`/api/wallet/balance/${encodeURIComponent(this.currentAddress)}`);
+      if (!response.ok) {
+        console.warn('[Cashonize] Balance API returned error:', response.status);
+        return { bch: 0, sat: 0 };
+      }
+      const data = await response.json();
+      return {
+        sat: data.sat || 0,
+        bch: data.bch || 0,
+      };
+    } catch (error) {
+      console.error('[Cashonize] Failed to fetch balance:', error);
+      return { bch: 0, sat: 0 };
+    }
   }
 
   /**

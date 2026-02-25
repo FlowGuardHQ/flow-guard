@@ -359,45 +359,18 @@ export class WalletConnectConnector implements IWalletConnector {
     }
 
     try {
-      // Determine network from address prefix
-      const isTestnet = this.currentAddress.startsWith('bchtest:');
-
-      // Use Chaingraph API for balance lookup
-      const apiUrl = isTestnet
-        ? 'https://gql.chaingraph.pat.mn/v1/graphql'  // Chipnet
-        : 'https://gql.chaingraph.cash/v1/graphql';   // Mainnet
-
-      const query = `
-        query GetBalance($address: String!) {
-          output(where: {
-            locking_bytecode_pattern: {_like: $address}
-            _not: {spent_by: {}}
-          }) {
-            value_satoshis
-          }
-        }
-      `;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          variables: { address: `%${this.currentAddress.split(':')[1]}%` },
-        }),
-      });
-
+      const response = await fetch(`/api/wallet/balance/${encodeURIComponent(this.currentAddress)}`);
+      if (!response.ok) {
+        console.warn('Balance API returned error:', response.status);
+        return { bch: 0, sat: 0 };
+      }
       const data = await response.json();
-      const outputs = data?.data?.output || [];
-      const sat = outputs.reduce((sum: number, output: any) => sum + (output.value_satoshis || 0), 0);
-
       return {
-        sat,
-        bch: sat / 100000000,
+        sat: data.sat || 0,
+        bch: data.bch || 0,
       };
     } catch (error) {
       console.error('Failed to fetch balance:', error);
-      // Return zero on error rather than throwing
       return { bch: 0, sat: 0 };
     }
   }

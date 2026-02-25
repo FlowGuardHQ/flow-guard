@@ -372,51 +372,23 @@ export class Web3ModalWalletConnectConnector implements IWalletConnector {
   }
 
   /**
-   * Get wallet balance via Chaingraph
-   */
+ * Get wallet balance via backend API
+ */
   async getBalance(): Promise<WalletBalance> {
     if (!this.currentAddress) {
       return { bch: 0, sat: 0 };
     }
 
     try {
-      const isTestnet = this.currentAddress.startsWith('bchtest:');
-      const apiUrl = isTestnet
-        ? 'https://gql.chaingraph.pat.mn/v1/graphql' // Chipnet
-        : 'https://gql.chaingraph.cash/v1/graphql'; // Mainnet
-
-      const addressPart = this.currentAddress.split(':')[1];
-
-      const query = `
-        query GetBalance($address: String!) {
-          output(where: {
-            locking_bytecode_pattern: {_like: $address}
-            _not: {spent_by: {}}
-          }) {
-            value_satoshis
-          }
-        }
-      `;
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query,
-          variables: { address: `%${addressPart}%` },
-        }),
-      });
-
+      const response = await fetch(`/api/wallet/balance/${encodeURIComponent(this.currentAddress)}`);
+      if (!response.ok) {
+        console.warn('[Web3ModalWC] Balance API returned error:', response.status);
+        return { bch: 0, sat: 0 };
+      }
       const data = await response.json();
-      const outputs = data?.data?.output || [];
-      const sat = outputs.reduce(
-        (sum: number, output: any) => sum + (output.value_satoshis || 0),
-        0
-      );
-
       return {
-        sat,
-        bch: sat / 100000000,
+        sat: data.sat || 0,
+        bch: data.bch || 0,
       };
     } catch (error) {
       console.error('[Web3ModalWC] Failed to fetch balance:', error);
