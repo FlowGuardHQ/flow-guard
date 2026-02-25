@@ -1066,7 +1066,7 @@ export async function pausePaymentOnChain(
 
   const signOptions = deserializeWcSignOptions(wcTransaction);
   const signResult = await wallet.signCashScriptTransaction(signOptions);
-  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Airdrop pause signing failed');
+  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Payment pause signing failed');
 
   const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-pause`, {
     method: 'POST',
@@ -1163,7 +1163,7 @@ export async function cancelPaymentOnChain(
 
   const signOptions = deserializeWcSignOptions(wcTransaction);
   const signResult = await wallet.signCashScriptTransaction(signOptions);
-  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Airdrop cancel signing failed');
+  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Payment cancel signing failed');
 
   const confirmResponse = await fetch(`${apiUrl}/payments/${paymentId}/confirm-cancel`, {
     method: 'POST',
@@ -1202,7 +1202,7 @@ export async function pauseAirdropOnChain(
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to build pause transaction' }));
-    throw new Error(error.error || error.message || 'Failed to build pause transaction');
+    throw new Error(getApiErrorMessage(error, 'Failed to build pause transaction'));
   }
 
   const { wcTransaction } = await response.json();
@@ -1210,8 +1210,13 @@ export async function pauseAirdropOnChain(
     throw new Error('Backend did not return pause transaction');
   }
 
-  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
-  const txHash = signResult.signedTransactionHash;
+  const signOptions = {
+    ...deserializeWcSignOptions(wcTransaction),
+    // Wallet-side broadcast can hang on some BCH WC wallets; broadcast from backend instead.
+    broadcast: false,
+  };
+  const signResult = await wallet.signCashScriptTransaction(signOptions);
+  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Airdrop pause signing failed');
 
   const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-pause`, {
     method: 'POST',
@@ -1223,7 +1228,7 @@ export async function pauseAirdropOnChain(
   });
   if (!confirmResponse.ok) {
     const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm pause transaction' }));
-    throw new Error(error.error || error.message || 'Failed to confirm pause transaction');
+    throw new Error(getApiErrorMessage(error, 'Failed to confirm pause transaction'));
   }
 
   return txHash;
@@ -1257,7 +1262,7 @@ export async function cancelAirdropOnChain(
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Failed to build cancel transaction' }));
-    throw new Error(error.error || error.message || 'Failed to build cancel transaction');
+    throw new Error(getApiErrorMessage(error, 'Failed to build cancel transaction'));
   }
 
   const { wcTransaction } = await response.json();
@@ -1265,8 +1270,13 @@ export async function cancelAirdropOnChain(
     throw new Error('Backend did not return cancel transaction');
   }
 
-  const signResult = await wallet.signCashScriptTransaction(deserializeWcSignOptions(wcTransaction));
-  const txHash = signResult.signedTransactionHash;
+  const signOptions = {
+    ...deserializeWcSignOptions(wcTransaction),
+    // Wallet-side broadcast can hang on some BCH WC wallets; broadcast from backend instead.
+    broadcast: false,
+  };
+  const signResult = await wallet.signCashScriptTransaction(signOptions);
+  const txHash = await resolveTxHashFromSignResult(signResult, signOptions, 'Airdrop cancel signing failed');
 
   const confirmResponse = await fetch(`${apiUrl}/airdrops/${airdropId}/confirm-cancel`, {
     method: 'POST',
@@ -1278,7 +1288,7 @@ export async function cancelAirdropOnChain(
   });
   if (!confirmResponse.ok) {
     const error = await confirmResponse.json().catch(() => ({ error: 'Failed to confirm cancel transaction' }));
-    throw new Error(error.error || error.message || 'Failed to confirm cancel transaction');
+    throw new Error(getApiErrorMessage(error, 'Failed to confirm cancel transaction'));
   }
 
   return txHash;
@@ -1409,7 +1419,11 @@ export async function claimAirdropFunds(
       throw new Error('No WalletConnect-compatible claim transaction returned from backend');
     }
 
-    const signOptions = deserializeWcSignOptions(wcTransaction);
+    const signOptions = {
+      ...deserializeWcSignOptions(wcTransaction),
+      // Wallet-side broadcast can hang on some BCH WC wallets; broadcast from backend instead.
+      broadcast: false,
+    };
     const signResult = await wallet.signCashScriptTransaction(signOptions);
     const txId = await resolveTxHashFromSignResult(signResult, signOptions, 'Airdrop claim signing failed');
 
