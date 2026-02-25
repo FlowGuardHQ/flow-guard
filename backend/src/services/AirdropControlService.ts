@@ -111,11 +111,13 @@ export class AirdropControlService {
       }
     }
 
-    return {
-      wcTransaction: txBuilder.generateWcTransactionObject({
+    const wcTransaction = this.forceFinalSequences(txBuilder.generateWcTransactionObject({
         broadcast: true,
         userPrompt: 'Pause airdrop campaign',
-      }),
+      }));
+
+    return {
+      wcTransaction,
       nextStatus: 'PAUSED',
     };
   }
@@ -229,11 +231,13 @@ export class AirdropControlService {
       }
     }
 
-    return {
-      wcTransaction: txBuilder.generateWcTransactionObject({
+    const wcTransaction = this.forceFinalSequences(txBuilder.generateWcTransactionObject({
         broadcast: true,
         userPrompt: 'Cancel airdrop campaign and recover remaining funds',
-      }),
+      }));
+
+    return {
+      wcTransaction,
       nextStatus: 'CANCELLED',
       cancelReturnAddress,
       remainingPool,
@@ -356,6 +360,21 @@ export class AirdropControlService {
     }
 
     return { utxos: selected, total };
+  }
+
+  /**
+   * Avoid mempool "non-final transaction" rejections when tx.locktime uses wall-clock time.
+   * We still keep tx.locktime for covenant introspection checks, but make all inputs final.
+   */
+  private forceFinalSequences(wcTransaction: WcTransactionObject): WcTransactionObject {
+    const finalSequence = 0xffffffff;
+    for (const input of wcTransaction.transaction.inputs as Array<{ sequenceNumber?: number }>) {
+      input.sequenceNumber = finalSequence;
+    }
+    for (const sourceOutput of wcTransaction.sourceOutputs as Array<{ sequenceNumber?: number }>) {
+      sourceOutput.sequenceNumber = finalSequence;
+    }
+    return wcTransaction;
   }
 
   private networkPrefix(): 'bitcoincash' | 'bchtest' {

@@ -180,10 +180,10 @@ export class AirdropClaimService {
       }
     }
 
-    const wcTransaction = txBuilder.generateWcTransactionObject({
+    const wcTransaction = this.forceFinalSequences(txBuilder.generateWcTransactionObject({
       broadcast: true,
       userPrompt: 'Claim airdrop allocation',
-    });
+    }));
 
     console.log('[AirdropClaimService] Built claim transaction', {
       contractAddress,
@@ -231,5 +231,20 @@ export class AirdropClaimService {
     }
 
     return null;
+  }
+
+  /**
+   * Avoid mempool "non-final transaction" rejections when tx.locktime uses wall-clock time.
+   * We still keep tx.locktime for covenant introspection checks, but make all inputs final.
+   */
+  private forceFinalSequences(wcTransaction: WcTransactionObject): WcTransactionObject {
+    const finalSequence = 0xffffffff;
+    for (const input of wcTransaction.transaction.inputs as Array<{ sequenceNumber?: number }>) {
+      input.sequenceNumber = finalSequence;
+    }
+    for (const sourceOutput of wcTransaction.sourceOutputs as Array<{ sequenceNumber?: number }>) {
+      sourceOutput.sequenceNumber = finalSequence;
+    }
+    return wcTransaction;
   }
 }
