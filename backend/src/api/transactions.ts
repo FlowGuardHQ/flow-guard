@@ -8,7 +8,7 @@ import { TransactionService } from '../services/transactionService.js';
 import { Contract, ElectrumNetworkProvider, TransactionBuilder, type Output } from 'cashscript';
 import { ContractFactory } from '../services/ContractFactory.js';
 import { ContractService } from '../services/contract-service.js';
-import { binToHex, decodeTransaction, hexToBin } from '@bitauth/libauth';
+import { binToHex, decodeTransaction, hash160, hexToBin } from '@bitauth/libauth';
 import db from '../database/schema.js';
 
 const router = Router();
@@ -20,7 +20,45 @@ function diagnoseSignedTransaction(txHex: string): {
   sequences: number[];
   firstInputUnlockingBytes: number;
   firstInputHasPlaceholderPubkey: boolean;
+  firstInputHasPlaceholderSignature: boolean;
+  inputsWithPlaceholderPubkey: number[];
+  inputsWithPlaceholderSignature: number[];
+  claimLike?: {
+    claimerHashHex: string;
+    pubkeyHex: string;
+    pubkeyHashHex: string;
+    pubkeyMatchesClaimerHash: boolean;
+  };
 } | null {
+  const readPushes = (script: Uint8Array, maxPushes = 3): Uint8Array[] => {
+    const pushes: Uint8Array[] = [];
+    let i = 0;
+    while (i < script.length && pushes.length < maxPushes) {
+      const opcode = script[i++];
+      let length = 0;
+      if (opcode <= 0x4b) {
+        length = opcode;
+      } else if (opcode === 0x4c) {
+        if (i >= script.length) break;
+        length = script[i++];
+      } else if (opcode === 0x4d) {
+        if (i + 1 >= script.length) break;
+        length = script[i] | (script[i + 1] << 8);
+        i += 2;
+      } else if (opcode === 0x4e) {
+        if (i + 3 >= script.length) break;
+        length = script[i] | (script[i + 1] << 8) | (script[i + 2] << 16) | (script[i + 3] << 24);
+        i += 4;
+      } else {
+        break;
+      }
+      if (length < 0 || i + length > script.length) break;
+      pushes.push(script.slice(i, i + length));
+      i += length;
+    }
+    return pushes;
+  };
+
   try {
     const decoded = decodeTransaction(hexToBin(txHex));
     if (typeof decoded === 'string') {
@@ -30,6 +68,43 @@ function diagnoseSignedTransaction(txHex: string): {
     const firstUnlocking = decoded.inputs[0]?.unlockingBytecode;
     const firstUnlockingHex = firstUnlocking ? binToHex(firstUnlocking) : '';
     const placeholderPubkeyPattern = `21${'00'.repeat(33)}`;
+    const placeholderSigPattern = `41${'00'.repeat(65)}`;
+    const inputsWithPlaceholderPubkey: number[] = [];
+    const inputsWithPlaceholderSignature: number[] = [];
+    decoded.inputs.forEach((input, index) => {
+      const unlockingHex = binToHex(input.unlockingBytecode);
+      if (unlockingHex.includes(placeholderPubkeyPattern)) {
+        inputsWithPlaceholderPubkey.push(index);
+      }
+      if (unlockingHex.includes(placeholderSigPattern)) {
+        inputsWithPlaceholderSignature.push(index);
+      }
+    });
+
+    let claimLike:
+      | {
+          claimerHashHex: string;
+          pubkeyHex: string;
+          pubkeyHashHex: string;
+          pubkeyMatchesClaimerHash: boolean;
+        }
+      | undefined;
+    if (firstUnlocking && firstUnlocking.length > 0) {
+      const pushes = readPushes(firstUnlocking, 3);
+      const claimerHashPush = pushes.find((push) => push.length === 20);
+      const pubkeyPush = pushes.find((push) => push.length === 33);
+      if (claimerHashPush && pubkeyPush) {
+        const claimerHashHex = binToHex(claimerHashPush);
+        const pubkeyHex = binToHex(pubkeyPush);
+        const pubkeyHashHex = binToHex(hash160(pubkeyPush));
+        claimLike = {
+          claimerHashHex,
+          pubkeyHex,
+          pubkeyHashHex,
+          pubkeyMatchesClaimerHash: pubkeyHashHex === claimerHashHex,
+        };
+      }
+    }
 
     return {
       inputCount: decoded.inputs.length,
@@ -38,6 +113,10 @@ function diagnoseSignedTransaction(txHex: string): {
       sequences: decoded.inputs.map((input) => input.sequenceNumber),
       firstInputUnlockingBytes: firstUnlocking?.length ?? 0,
       firstInputHasPlaceholderPubkey: firstUnlockingHex.includes(placeholderPubkeyPattern),
+      firstInputHasPlaceholderSignature: firstUnlockingHex.includes(placeholderSigPattern),
+      inputsWithPlaceholderPubkey,
+      inputsWithPlaceholderSignature,
+      ...(claimLike ? { claimLike } : {}),
     };
   } catch {
     return null;
