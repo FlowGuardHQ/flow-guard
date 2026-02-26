@@ -63,14 +63,28 @@ export class AirdropClaimService {
 
     const contractUtxo = contractUtxos.find(u => u.token?.nft != null) ?? contractUtxos[0];
     const contractBalance = contractUtxo.satoshis;
-    if (!contractUtxo.token) {
+    if (!contractUtxo.token?.nft) {
       throw new Error('Airdrop contract UTXO is missing the required mutable state NFT');
     }
 
-    // Update NFT commitment: status/flags/total_claimed/claims_count/last_claim_timestamp
-    const commitment = currentCommitment ? hexToBin(currentCommitment) : new Uint8Array(40);
-    if (commitment.length < 40) {
-      throw new Error(`Invalid airdrop state commitment length: expected >=40, got ${commitment.length}`);
+    // Always derive next state from on-chain NFT commitment, not DB cache.
+    const commitment = this.resolveCommitment(
+      contractUtxo.token.nft.commitment as unknown,
+      currentCommitment,
+    );
+    if (commitment.length !== 40) {
+      throw new Error(`Invalid airdrop state commitment length: expected 40, got ${commitment.length}`);
+    }
+    if (currentCommitment) {
+      const cached = hexToBin(currentCommitment);
+      const onChainHex = binToHex(commitment);
+      if (cached.length !== commitment.length || binToHex(cached) !== onChainHex) {
+        console.warn('[AirdropClaimService] DB commitment differed from on-chain commitment; using on-chain value', {
+          contractAddress,
+          cachedLength: cached.length,
+          onChainLength: commitment.length,
+        });
+      }
     }
     const newCommitment = new Uint8Array(commitment);
     const totalClaimedOnChain = this.readUint64LE(commitment, 2);
@@ -204,6 +218,19 @@ export class AirdropClaimService {
     target[offset + 2] = (safe >>> 16) & 0xff;
     target[offset + 3] = (safe >>> 24) & 0xff;
     target[offset + 4] = Math.floor(safe / 0x100000000) & 0xff;
+  }
+
+  private resolveCommitment(onChain: unknown, fallbackHex?: string): Uint8Array {
+    if (onChain instanceof Uint8Array) {
+      return onChain;
+    }
+    if (typeof onChain === 'string' && onChain.length > 0) {
+      return hexToBin(onChain);
+    }
+    if (fallbackHex && fallbackHex.length > 0) {
+      return hexToBin(fallbackHex);
+    }
+    return new Uint8Array(40);
   }
 
   private async selectFeePayerInputs(address: string, requiredFee: bigint): Promise<{
